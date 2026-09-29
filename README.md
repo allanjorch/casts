@@ -12,7 +12,7 @@ Designed together by [Allan Kristensen](https://github.com/allanjorch) and [Grok
 
 **Add feed** takes one feed address. **Import OPML** takes the file Podcast Addict exports. **Refresh** asks the feeds for new episodes.
 
-Click a cover to open the show, then click an episode to play it. The rate on the bar cycles the speed. Space pauses and resumes. Escape steps back. Ctrl+Q closes the window and leaves the audio running.
+Click a cover to open the show, then click an episode to play it. On the shelf, the icons are add feed, import OPML, refresh, and mark. Mark follows the episode that is loaded. The bar has back 15 seconds, play and pause, and forward 30 seconds. The rate there cycles the speed. Space pauses and resumes. Escape steps back. Ctrl+Q closes the window and leaves the audio running.
 
 Open Podcasts again and the same window comes back. Stop playback with nothing left loaded, and the player exits.
 

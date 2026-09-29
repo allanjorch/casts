@@ -5,10 +5,60 @@
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
+#include <QEvent>
+#include <QFont>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickItem>
 #include <QQuickStyle>
+#include <QQuickWindow>
+#include <QVariant>
+#include <QWheelEvent>
+
+class ShelfWheelFilter : public QObject {
+public:
+    QObject *window = nullptr;
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (!window || event->type() != QEvent::Wheel)
+            return false;
+        if (!eventIsOurs(watched))
+            return false;
+        const auto *wheel = static_cast<const QWheelEvent *>(event);
+        if (!(wheel->modifiers() & Qt::ControlModifier))
+            return false;
+        int delta = wheel->angleDelta().y();
+        if (delta == 0) {
+            const int pixel = wheel->pixelDelta().y();
+            if (pixel > 0)
+                delta = 120;
+            else if (pixel < 0)
+                delta = -120;
+        }
+        if (delta == 0)
+            return false;
+        QVariant consumed;
+        const QVariant deltaArg(delta);
+        const bool called = QMetaObject::invokeMethod(
+            window, "zoomFromWheel", Qt::DirectConnection,
+            Q_RETURN_ARG(QVariant, consumed), Q_ARG(QVariant, deltaArg));
+        return called && consumed.toBool();
+    }
+
+private:
+    bool eventIsOurs(QObject *watched) const
+    {
+        if (watched == window)
+            return true;
+        if (auto *item = qobject_cast<QQuickItem *>(watched))
+            return item->window() == window;
+        if (auto *view = qobject_cast<QWindow *>(watched))
+            return view == window;
+        return false;
+    }
+};
 
 class UiBridge : public QObject {
     Q_OBJECT
@@ -44,6 +94,10 @@ int main(int argc, char **argv)
     app.setApplicationName(QStringLiteral("podcast"));
     app.setApplicationDisplayName(QStringLiteral("Podcasts"));
     app.setDesktopFileName(QStringLiteral("com.github.allanjorch.podcast"));
+    QFont uiFont(QStringLiteral("monospace"));
+    uiFont.setStyleHint(QFont::Monospace);
+    uiFont.setWeight(QFont::Normal);
+    app.setFont(uiFont);
     QQuickStyle::setStyle(QStringLiteral("Material"));
 
     auto bus = QDBusConnection::sessionBus();
@@ -72,6 +126,9 @@ int main(int argc, char **argv)
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty())
         return 1;
+    ShelfWheelFilter wheelFilter;
+    wheelFilter.window = engine.rootObjects().constFirst();
+    app.installEventFilter(&wheelFilter);
     return app.exec();
 }
 

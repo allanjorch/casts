@@ -47,8 +47,9 @@ Item {
             anchors.leftMargin: 24
             anchors.verticalCenter: parent.verticalCenter
             text: "Back"
-            color: theme.accent
-            font.pixelSize: 14 * theme.textScale
+            color: theme.foreground
+            font.pixelSize: theme.body
+            font.weight: Font.Normal
             MouseArea {
                 anchors.fill: parent
                 anchors.margins: -8
@@ -64,8 +65,9 @@ Item {
             spacing: 18
             Text {
                 text: "Mark all as played"
-                color: theme.accent
-                font.pixelSize: 14 * theme.textScale
+                color: theme.foreground
+                font.pixelSize: theme.body
+                font.weight: Font.Normal
                 MouseArea {
                     anchors.fill: parent
                     anchors.margins: -6
@@ -76,7 +78,8 @@ Item {
             Text {
                 text: "Refresh"
                 color: theme.foreground
-                font.pixelSize: 14 * theme.textScale
+                font.pixelSize: theme.body
+                font.weight: Font.Normal
                 MouseArea {
                     anchors.fill: parent
                     anchors.margins: -6
@@ -86,8 +89,9 @@ Item {
             }
             Text {
                 text: "Remove"
-                color: theme.muted
-                font.pixelSize: 14 * theme.textScale
+                color: theme.dim
+                font.pixelSize: theme.body
+                font.weight: Font.Normal
                 MouseArea {
                     anchors.fill: parent
                     anchors.margins: -6
@@ -106,32 +110,30 @@ Item {
                 width: parent.width
                 text: backend.openShowTitle
                 color: theme.foreground
-                font.pixelSize: 18 * theme.textScale
+                font.pixelSize: theme.heading
+                font.weight: Font.Normal
                 elide: Text.ElideRight
             }
             Text {
                 text: backend.openShowUnheard === 0
                       ? "Caught up"
                       : backend.openShowUnheard + " unplayed"
-                color: theme.muted
-                font.pixelSize: 12 * theme.textScale
+                color: theme.dim
+                font.pixelSize: theme.caption
+                font.weight: Font.Normal
             }
         }
     }
 
-    Text {
+    StatusNote {
         id: statusLine
-        visible: backend.status.length > 0
         anchors.top: header.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.leftMargin: 24
         anchors.rightMargin: 24
-        height: visible ? 22 * theme.textScale : 0
-        text: backend.status
-        color: theme.muted
-        font.pixelSize: 12 * theme.textScale
-        elide: Text.ElideRight
+        height: implicitHeight * opacity
+        font.pixelSize: theme.bodySmall
     }
 
     ListView {
@@ -170,15 +172,16 @@ Item {
                     Text {
                         width: parent.width
                         text: model.title
-                        color: theme.foreground
-                        opacity: model.played ? 0.45 : 1
-                        font.pixelSize: 15 * theme.textScale
+                        color: model.played ? theme.dim : theme.foreground
+                        font.pixelSize: theme.titleSize
+                        font.weight: Font.Normal
                         elide: Text.ElideRight
                     }
                     Text {
                         width: parent.width
-                        color: theme.muted
-                        font.pixelSize: 12 * theme.textScale
+                        color: theme.dim
+                        font.pixelSize: theme.caption
+                        font.weight: Font.Normal
                         elide: Text.ElideRight
                         text: page.day(model.published)
                               + (model.duration > 0 ? "  ·  " + page.clock(model.duration) : "")
@@ -205,8 +208,9 @@ Item {
                     anchors.rightMargin: 20
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Mark"
-                    color: theme.accent
-                    font.pixelSize: 14 * theme.textScale
+                    color: theme.foreground
+                    font.pixelSize: theme.body
+                    font.weight: Font.Normal
                     MouseArea {
                         anchors.fill: parent
                         anchors.margins: -10
@@ -223,7 +227,6 @@ Item {
                     anchors.bottom: parent.bottom
                     hoverEnabled: true
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    cursorShape: Qt.PointingHandCursor
                     onClicked: function(mouse) {
                         if (mouse.button === Qt.RightButton)
                             page.openMarkMenu(model.episodeId, model.played)
@@ -234,29 +237,29 @@ Item {
             }
         }
 
-    Menu {
+    AppMenu {
         id: markMenu
-        MenuItem {
+        AppMenuItem {
             text: "Mark as played"
             enabled: !page.markedPlayed
             onTriggered: backend.markPlayed(page.markedEpisode, true)
         }
-        MenuItem {
+        AppMenuItem {
             text: "Mark as unplayed"
             enabled: page.markedPlayed
             onTriggered: backend.markPlayed(page.markedEpisode, false)
         }
-        MenuSeparator {}
-        MenuItem {
+        AppMenuSeparator {}
+        AppMenuItem {
             text: "Mark older as played"
             onTriggered: backend.markOlderPlayed(page.markedEpisode)
         }
-        MenuItem {
+        AppMenuItem {
             text: "Mark newer as played"
             onTriggered: backend.markNewerPlayed(page.markedEpisode)
         }
-        MenuSeparator {}
-        MenuItem {
+        AppMenuSeparator {}
+        AppMenuItem {
             text: "Mark all as played"
             onTriggered: page.markAllRequested()
         }

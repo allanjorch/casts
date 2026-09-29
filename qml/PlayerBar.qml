@@ -5,7 +5,7 @@ Rectangle {
     id: bar
     signal markAllRequested()
     color: theme.darkMode ? Qt.darker(theme.background, 1.25) : Qt.lighter(theme.background, 1.08)
-    implicitHeight: 78 * theme.textScale
+    implicitHeight: 96 * theme.textScale
     height: implicitHeight
 
     property bool dragging: false
@@ -38,6 +38,15 @@ Rectangle {
         return (rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)) + "×"
     }
 
+    function nudge(seconds) {
+        var next = backend.playerPosition + seconds
+        if (next < 0)
+            next = 0
+        if (backend.playerDuration > 0 && next > backend.playerDuration)
+            next = backend.playerDuration
+        backend.seekTo(next)
+    }
+
     Row {
         anchors.fill: parent
         anchors.leftMargin: 16
@@ -66,59 +75,72 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 6
 
-            Row {
+            Item {
                 width: parent.width
-                spacing: 14
-                Text {
-                    text: backend.playerStatus === "playing" ? "Pause" : "Play"
-                    color: theme.accent
-                    font.pixelSize: 14 * theme.textScale
-                    MouseArea {
-                        anchors.fill: parent
-                        anchors.margins: -6
-                        cursorShape: Qt.PointingHandCursor
+                height: transport.implicitHeight
+
+                Row {
+                    id: transport
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    IconButton {
+                        icon.name: "media-seek-backward-symbolic"
+                        tip: "Back 15 seconds"
+                        onClicked: bar.nudge(-15)
+                    }
+                    IconButton {
+                        icon.name: backend.playerStatus === "playing"
+                                   ? "media-playback-pause-symbolic"
+                                   : "media-playback-start-symbolic"
+                        tip: backend.playerStatus === "playing" ? "Pause" : "Play"
                         onClicked: backend.togglePlayback()
                     }
-                }
-                Text {
-                    text: backend.playerTitle
-                    color: theme.foreground
-                    font.pixelSize: 14 * theme.textScale
-                    elide: Text.ElideRight
-                    width: Math.max(40, parent.width - 280 * theme.textScale)
-                }
-                Text {
-                    text: rateLabel(backend.playerRate)
-                    color: theme.foreground
-                    font.pixelSize: 14 * theme.textScale
-                    MouseArea {
-                        anchors.fill: parent
-                        anchors.margins: -6
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: backend.cycleRate()
+                    IconButton {
+                        icon.name: "media-seek-forward-symbolic"
+                        tip: "Forward 30 seconds"
+                        onClicked: bar.nudge(30)
                     }
                 }
-                Text {
-                    text: "Mark"
-                    color: theme.accent
-                    font.pixelSize: 14 * theme.textScale
-                    MouseArea {
-                        anchors.fill: parent
-                        anchors.margins: -6
-                        cursorShape: Qt.PointingHandCursor
+                Row {
+                    id: extras
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    IconButton {
+                        caption: rateLabel(backend.playerRate)
+                        tip: "Playback speed"
+                        onClicked: backend.cycleRate()
+                    }
+                    IconButton {
+                        icon.name: "check-plain-symbolic"
+                        tip: "Mark"
                         onClicked: {
                             bar.markedPlayed = backend.playerPlayed
                             markMenu.popup()
                         }
                     }
                 }
+                Text {
+                    anchors.left: transport.right
+                    anchors.right: extras.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    text: backend.playerTitle
+                    color: theme.foreground
+                    font.pixelSize: theme.titleSize
+                    font.weight: Font.Normal
+                    elide: Text.ElideRight
+                }
             }
 
             Text {
                 width: parent.width
                 text: backend.playerError.length > 0 ? backend.playerError : backend.playerShowTitle
-                color: backend.playerError.length > 0 ? theme.accent : theme.muted
-                font.pixelSize: 12 * theme.textScale
+                color: backend.playerError.length > 0 ? theme.accent : theme.dim
+                font.pixelSize: theme.caption
+                font.weight: Font.Normal
                 elide: Text.ElideRight
             }
 
@@ -127,8 +149,9 @@ Rectangle {
                 spacing: 8
                 Text {
                     text: clock(dragging ? dragFraction * backend.playerDuration : backend.playerPosition)
-                    color: theme.muted
-                    font.pixelSize: 11 * theme.textScale
+                    color: theme.dim
+                    font.pixelSize: theme.caption
+                    font.weight: Font.Normal
                     width: 48 * theme.textScale
                 }
                 Rectangle {
@@ -164,36 +187,37 @@ Rectangle {
                 }
                 Text {
                     text: clock(backend.playerDuration)
-                    color: theme.muted
-                    font.pixelSize: 11 * theme.textScale
+                    color: theme.dim
+                    font.pixelSize: theme.caption
+                    font.weight: Font.Normal
                 }
             }
         }
     }
 
-    Menu {
+    AppMenu {
         id: markMenu
-        MenuItem {
+        AppMenuItem {
             text: "Mark as played"
             enabled: !bar.markedPlayed
             onTriggered: backend.markPlayed(backend.playerEpisodeId, true)
         }
-        MenuItem {
+        AppMenuItem {
             text: "Mark as unplayed"
             enabled: bar.markedPlayed
             onTriggered: backend.markPlayed(backend.playerEpisodeId, false)
         }
-        MenuSeparator {}
-        MenuItem {
+        AppMenuSeparator {}
+        AppMenuItem {
             text: "Mark older as played"
             onTriggered: backend.markOlderPlayed(backend.playerEpisodeId)
         }
-        MenuItem {
+        AppMenuItem {
             text: "Mark newer as played"
             onTriggered: backend.markNewerPlayed(backend.playerEpisodeId)
         }
-        MenuSeparator {}
-        MenuItem {
+        AppMenuSeparator {}
+        AppMenuItem {
             text: "Mark all as played"
             onTriggered: bar.markAllRequested()
         }

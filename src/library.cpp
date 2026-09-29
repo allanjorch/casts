@@ -427,6 +427,48 @@ void Library::setRate(double rate)
     setSetting(QStringLiteral("rate"), QString::number(rate, 'f', 2));
 }
 
+QString Library::shelfView() const
+{
+    return setting(QStringLiteral("shelf.view"), QStringLiteral("gallery")) == QStringLiteral("list")
+        ? QStringLiteral("list")
+        : QStringLiteral("gallery");
+}
+
+void Library::setShelfView(const QString &view)
+{
+    setSetting(QStringLiteral("shelf.view"),
+               view == QStringLiteral("list") ? QStringLiteral("list") : QStringLiteral("gallery"));
+}
+
+int Library::shelfColumns() const
+{
+    bool ok = false;
+    const int value = setting(QStringLiteral("shelf.columns"), QStringLiteral("5")).toInt(&ok);
+    if (!ok)
+        return 5;
+    return qBound(2, value, 8);
+}
+
+void Library::setShelfColumns(int columns)
+{
+    setSetting(QStringLiteral("shelf.columns"), QString::number(qBound(2, columns, 8)));
+}
+
+int Library::shelfListSize() const
+{
+    // 0 is the original list cover. ShelfView keeps five sizes, 0 through 4.
+    bool ok = false;
+    const int value = setting(QStringLiteral("shelf.listSize"), QStringLiteral("0")).toInt(&ok);
+    if (!ok)
+        return 0;
+    return qBound(0, value, 4);
+}
+
+void Library::setShelfListSize(int size)
+{
+    setSetting(QStringLiteral("shelf.listSize"), QString::number(qBound(0, size, 4)));
+}
+
 QStringList Library::feedUrls() const
 {
     QStringList urls;

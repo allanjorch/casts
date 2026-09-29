@@ -33,6 +33,9 @@ class Backend : public QObject {
     Q_PROPERTY(double playerRate READ playerRate NOTIFY playerStateChanged)
     Q_PROPERTY(double playerPosition READ playerPosition NOTIFY playerPositionChanged)
     Q_PROPERTY(double playerDuration READ playerDuration NOTIFY playerStateChanged)
+    Q_PROPERTY(QString shelfView READ shelfView NOTIFY shelfLayoutChanged)
+    Q_PROPERTY(int shelfColumns READ shelfColumns NOTIFY shelfLayoutChanged)
+    Q_PROPERTY(int shelfListSize READ shelfListSize NOTIFY shelfLayoutChanged)
 
 public:
     explicit Backend(Library &library, QObject *parent = nullptr);
@@ -56,6 +59,9 @@ public:
     double playerRate() const { return m_playerRate; }
     double playerPosition() const { return m_playerPosition; }
     double playerDuration() const { return m_playerDuration; }
+    QString shelfView() const;
+    int shelfColumns() const;
+    int shelfListSize() const;
 
     Q_INVOKABLE void addFeed(const QString &url);
     Q_INVOKABLE void importOpml(const QString &fileUrl);
@@ -70,6 +76,9 @@ public:
     Q_INVOKABLE void stopPlayback();
     Q_INVOKABLE void seekTo(double seconds);
     Q_INVOKABLE void cycleRate();
+    Q_INVOKABLE void setShelfView(const QString &view);
+    Q_INVOKABLE void setShelfColumns(int columns);
+    Q_INVOKABLE void setShelfListSize(int size);
     Q_INVOKABLE void markPlayed(qint64 episodeId, bool played);
     Q_INVOKABLE void markAllPlayed(qint64 showId);
     Q_INVOKABLE void markOlderPlayed(qint64 episodeId);
@@ -85,6 +94,7 @@ signals:
     void openShowChanged();
     void playerStateChanged();
     void playerPositionChanged();
+    void shelfLayoutChanged();
     void raised();
 
 private:
@@ -111,6 +121,7 @@ private:
     QNetworkAccessManager m_network;
     QList<Job> m_queue;
     QPointer<QNetworkReply> m_active;
+    bool m_shelfRefresh = false;
     QString m_status;
     bool m_busy = false;
     qint64 m_openShowId = 0;

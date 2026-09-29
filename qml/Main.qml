@@ -14,6 +14,8 @@ ApplicationWindow {
     visible: true
     title: backend.openShowId === 0 ? "Podcasts" : backend.openShowTitle
     color: theme.background
+    font.family: "monospace"
+    font.weight: Font.Normal
 
     Material.theme: theme.darkMode ? Material.Dark : Material.Light
     Material.accent: theme.accent
@@ -91,11 +93,30 @@ ApplicationWindow {
                 backend.closeShow()
         }
     }
+    function zoomFromWheel(delta) {
+        if (backend.openShowId !== 0 || addOpen || confirmAll || confirmRemove)
+            return false
+        shelfView.applyZoomDelta(delta)
+        return true
+    }
+
     Shortcut {
         sequence: "Space"
         enabled: !addOpen
         context: Qt.ApplicationShortcut
         onActivated: backend.togglePlayback()
+    }
+    Shortcut {
+        sequences: [StandardKey.ZoomIn, "Ctrl+="]
+        context: Qt.ApplicationShortcut
+        enabled: backend.openShowId === 0 && !addOpen && !confirmAll && !confirmRemove
+        onActivated: shelfView.zoomIn()
+    }
+    Shortcut {
+        sequence: StandardKey.ZoomOut
+        context: Qt.ApplicationShortcut
+        enabled: backend.openShowId === 0 && !addOpen && !confirmAll && !confirmRemove
+        onActivated: shelfView.zoomOut()
     }
 
     ColumnLayout {
@@ -103,6 +124,7 @@ ApplicationWindow {
         spacing: 0
 
         ShelfView {
+            id: shelfView
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: backend.openShowId === 0
@@ -112,6 +134,7 @@ ApplicationWindow {
                 feedField.forceActiveFocus()
             }
             onImportRequested: opmlDialog.open()
+            onMarkAllRequested: win.confirmAll = true
         }
 
         ShowView {
@@ -163,14 +186,17 @@ ApplicationWindow {
                 Text {
                     text: "Add a feed"
                     color: theme.foreground
-                    font.pixelSize: 18 * theme.textScale
+                    font.pixelSize: theme.heading
+                    font.weight: Font.Normal
                 }
                 TextField {
                     id: feedField
                     width: parent.width
                     placeholderText: "https://example.com/feed.xml"
                     color: theme.foreground
-                    font.pixelSize: 14 * theme.textScale
+                    font.pixelSize: theme.body
+                    font.weight: Font.Normal
+                    placeholderTextColor: theme.dim
                     Material.accent: theme.accent
                     onAccepted: submitFeed()
                     background: Rectangle {
@@ -204,7 +230,8 @@ ApplicationWindow {
                     width: parent.width
                     wrapMode: Text.Wrap
                     color: theme.foreground
-                    font.pixelSize: 16 * theme.textScale
+                    font.pixelSize: theme.body
+                    font.weight: Font.Normal
                     text: confirmRemove
                           ? "Remove " + backend.openShowTitle + "? Playback history for this show goes with it."
                           : "Mark every episode of " + (backend.playerShowId !== 0 && backend.openShowId === 0
@@ -257,7 +284,8 @@ ApplicationWindow {
         signal clicked()
         text: label
         color: theme.accent
-        font.pixelSize: 14 * theme.textScale
+        font.pixelSize: theme.body
+        font.weight: Font.Normal
         padding: 6
 
         MouseArea {

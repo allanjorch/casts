@@ -157,6 +157,19 @@ int runSelfTest(int argc, char **argv)
             check(shelf.at(0).unheard > 0, "fresh is unheard");
             check(shelf.at(2).unheard == 0, "caught up is last");
         }
+        check(library.shelfView() == QStringLiteral("gallery"), "shelf starts as gallery");
+        check(library.shelfColumns() == 5, "shelf starts at five columns");
+        library.setShelfView(QStringLiteral("list"));
+        library.setShelfColumns(1);
+        check(library.shelfView() == QStringLiteral("list"), "shelf list");
+        check(library.shelfColumns() == 2, "columns stay at least two");
+        library.setShelfColumns(20);
+        check(library.shelfColumns() == 8, "columns stay at most eight");
+        check(library.shelfListSize() == 0, "list cover starts at the smallest");
+        library.setShelfListSize(-3);
+        check(library.shelfListSize() == 0, "list cover stays at least the smallest");
+        library.setShelfListSize(9);
+        check(library.shelfListSize() == 4, "list cover stays at most the largest");
     }
 
     if (g_fails == 0) {

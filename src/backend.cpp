@@ -128,6 +128,7 @@ void Backend::refreshAll()
     const QStringList urls = m_library.feedUrls();
     if (urls.isEmpty())
         return;
+    m_shelfRefresh = true;
     enqueue(urls);
 }
 
@@ -209,6 +210,7 @@ void Backend::fetchNext()
         return;
     if (m_queue.isEmpty()) {
         setBusy(false);
+        m_shelfRefresh = false;
         return;
     }
     const Job job = m_queue.takeFirst();
@@ -250,8 +252,10 @@ void Backend::fetchNext()
         if (m_openShowId == showId)
             openShow(showId);
         const QString title = parsed->title;
-        if (m_queue.isEmpty())
-            setStatus(QStringLiteral("Updated %1.").arg(title));
+        if (m_queue.isEmpty()) {
+            setStatus(m_shelfRefresh ? QStringLiteral("All podcasts updated.")
+                                     : QStringLiteral("Updated %1.").arg(title));
+        }
         fetchNext();
     });
 }
@@ -363,6 +367,48 @@ void Backend::cycleRate()
     emit playerStateChanged();
     if (QDBusConnection::sessionBus().interface()->isServiceRegistered(kPlayerService))
         callPlayer(QStringLiteral("SetRate"), {next});
+}
+
+QString Backend::shelfView() const
+{
+    return m_library.shelfView();
+}
+
+int Backend::shelfColumns() const
+{
+    return m_library.shelfColumns();
+}
+
+void Backend::setShelfView(const QString &view)
+{
+    const QString next = view == QStringLiteral("list") ? QStringLiteral("list") : QStringLiteral("gallery");
+    if (next == m_library.shelfView())
+        return;
+    m_library.setShelfView(next);
+    emit shelfLayoutChanged();
+}
+
+void Backend::setShelfColumns(int columns)
+{
+    const int next = qBound(2, columns, 8);
+    if (next == m_library.shelfColumns())
+        return;
+    m_library.setShelfColumns(next);
+    emit shelfLayoutChanged();
+}
+
+int Backend::shelfListSize() const
+{
+    return m_library.shelfListSize();
+}
+
+void Backend::setShelfListSize(int size)
+{
+    const int next = qBound(0, size, 4);
+    if (next == m_library.shelfListSize())
+        return;
+    m_library.setShelfListSize(next);
+    emit shelfLayoutChanged();
 }
 
 void Backend::markPlayed(qint64 episodeId, bool played)

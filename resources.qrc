@@ -5,5 +5,11 @@
         <file alias="ShelfView.qml">qml/ShelfView.qml</file>
         <file alias="ShowView.qml">qml/ShowView.qml</file>
         <file alias="PlayerBar.qml">qml/PlayerBar.qml</file>
+        <file alias="IconButton.qml">qml/IconButton.qml</file>
+        <file alias="StatusNote.qml">qml/StatusNote.qml</file>
+        <file alias="AppMenu.qml">qml/AppMenu.qml</file>
+        <file alias="AppMenuItem.qml">qml/AppMenuItem.qml</file>
+        <file alias="AppMenuSeparator.qml">qml/AppMenuSeparator.qml</file>
+        <file alias="AppTip.qml">qml/AppTip.qml</file>
     </qresource>
 </RCC>

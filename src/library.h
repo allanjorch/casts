@@ -75,6 +75,12 @@ public:
 
     double rate() const;
     void setRate(double rate);
+    QString shelfView() const;
+    void setShelfView(const QString &view);
+    int shelfColumns() const;
+    void setShelfColumns(int columns);
+    int shelfListSize() const;
+    void setShelfListSize(int size);
 
     QStringList feedUrls() const;
 

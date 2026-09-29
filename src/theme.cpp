@@ -7,8 +7,10 @@
 #include <QDBusPendingReply>
 #include <QDir>
 #include <QFile>
+#include <QHash>
 #include <QTextStream>
 #include <QVariant>
+#include <QtMath>
 
 namespace {
 QVariant unwrap(QVariant value)
@@ -31,13 +33,16 @@ Theme::Theme(QObject *parent)
     : QObject(parent)
 {
     loadColors();
+    loadType();
     watchColors();
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, [this]() {
         loadColors();
+        loadType();
         watchColors();
     });
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this]() {
         loadColors();
+        loadType();
         watchColors();
     });
 
@@ -114,16 +119,81 @@ void Theme::loadColors()
     if (!haveMuted)
         muted = fallbackMix(background, foreground);
 
+    const QColor dim = foreground.darker(155);
     const bool changedColors = background != m_background || foreground != m_foreground
-        || accent != m_accent || selection != m_selection || muted != m_muted || dark != m_darkMode;
+        || accent != m_accent || selection != m_selection || muted != m_muted || dim != m_dim
+        || dark != m_darkMode;
     m_background = background;
     m_foreground = foreground;
     m_accent = accent;
     m_selection = selection;
     m_muted = muted;
+    m_dim = dim;
     m_darkMode = dark;
     if (changedColors)
         emit changed();
+}
+
+void Theme::loadType()
+{
+    int base = 12;
+    QHash<QString, int> over;
+    const auto read = [&base, &over](const QString &path) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            return;
+        bool inFont = false;
+        QTextStream in(&file);
+        while (!in.atEnd()) {
+            const QString line = in.readLine().trimmed();
+            if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
+                continue;
+            if (line.startsWith(QLatin1Char('[')) && line.endsWith(QLatin1Char(']'))) {
+                inFont = line == QStringLiteral("[font]");
+                continue;
+            }
+            if (!inFont)
+                continue;
+            const int equals = line.indexOf(QLatin1Char('='));
+            if (equals <= 0)
+                continue;
+            const QString key = line.left(equals).trimmed();
+            const int value = line.mid(equals + 1).trimmed().toInt();
+            if (value <= 0)
+                continue;
+            if (key == QStringLiteral("base-size"))
+                base = value;
+            else
+                over.insert(key, value);
+        }
+    };
+    read(QDir::homePath() + QStringLiteral("/.local/state/omarchy/current/theme/shell.toml"));
+    read(QDir::homePath() + QStringLiteral("/.config/omarchy/shell.toml"));
+
+    const auto token = [&over, base](const QString &key, double mult) {
+        const int explicitValue = over.value(key, 0);
+        if (explicitValue > 0)
+            return explicitValue;
+        return std::max(1, qRound(base * mult));
+    };
+    const int caption = token(QStringLiteral("caption"), 0.833);
+    const int bodySmall = token(QStringLiteral("body-small"), 0.917);
+    const int body = token(QStringLiteral("body"), 1.0);
+    const int subtitle = token(QStringLiteral("subtitle"), 1.083);
+    const int titleSize = token(QStringLiteral("title"), 1.167);
+    const int heading = token(QStringLiteral("heading"), 1.333);
+    const int display = token(QStringLiteral("display"), 2.0);
+    if (caption == m_caption && bodySmall == m_bodySmall && body == m_body && subtitle == m_subtitle
+        && titleSize == m_titleSize && heading == m_heading && display == m_display)
+        return;
+    m_caption = caption;
+    m_bodySmall = bodySmall;
+    m_body = body;
+    m_subtitle = subtitle;
+    m_titleSize = titleSize;
+    m_heading = heading;
+    m_display = display;
+    emit changed();
 }
 
 void Theme::watchColors()
@@ -135,12 +205,21 @@ void Theme::watchColors()
     const QString current = QDir::homePath() + QStringLiteral("/.local/state/omarchy/current");
     const QString theme = current + QStringLiteral("/theme");
     const QString colors = theme + QStringLiteral("/colors.toml");
+    const QString themeShell = theme + QStringLiteral("/shell.toml");
+    const QString userConfig = QDir::homePath() + QStringLiteral("/.config/omarchy");
+    const QString userShell = userConfig + QStringLiteral("/shell.toml");
     if (QDir(current).exists())
         m_watcher.addPath(current);
     if (QDir(theme).exists())
         m_watcher.addPath(theme);
     if (QFile::exists(colors))
         m_watcher.addPath(colors);
+    if (QFile::exists(themeShell))
+        m_watcher.addPath(themeShell);
+    if (QDir(userConfig).exists())
+        m_watcher.addPath(userConfig);
+    if (QFile::exists(userShell))
+        m_watcher.addPath(userShell);
 }
 
 void Theme::requestPortalSetting(const QString &nameSpace, const QString &key,
