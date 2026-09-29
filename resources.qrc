@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <file alias="Main.qml">qml/Main.qml</file>
+        <file alias="ShelfView.qml">qml/ShelfView.qml</file>
+        <file alias="ShowView.qml">qml/ShowView.qml</file>
+        <file alias="PlayerBar.qml">qml/PlayerBar.qml</file>
+    </qresource>
+</RCC>

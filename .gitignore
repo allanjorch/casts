@@ -1,0 +1,7 @@
+build/
+*.user
+.qmake.stash
+Makefile
+moc_*
+*.o
+podcast
