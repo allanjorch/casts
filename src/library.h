@@ -20,7 +20,10 @@ struct EpisodeRow {
     qint64 showId = 0;
     QString guid;
     QString title;
+    QString description;
     QString audioUrl;
+    QString imageUrl;
+    QString imagePath;
     qint64 published = 0;
     int durationSecs = 0;
     bool played = false;
@@ -30,6 +33,7 @@ struct EpisodeRow {
 struct ParsedEpisode {
     QString guid;
     QString title;
+    QString description;
     QString audioUrl;
     QString imageUrl;
     qint64 published = 0;
@@ -63,6 +67,7 @@ public:
 
     qint64 upsertShow(const QString &feedUrl, const ParsedShow &parsed);
     void setShowImage(qint64 showId, const QString &imageUrl, const QString &imagePath);
+    void setEpisodeImage(qint64 episodeId, const QString &imageUrl, const QString &imagePath);
     bool removeShow(qint64 showId);
 
     int markPlayed(qint64 episodeId, bool played);
@@ -75,12 +80,16 @@ public:
 
     double rate() const;
     void setRate(double rate);
+    double volume() const;
+    void setVolume(double volume);
     QString shelfView() const;
     void setShelfView(const QString &view);
     int shelfColumns() const;
     void setShelfColumns(int columns);
     int shelfListSize() const;
     void setShelfListSize(int size);
+    int episodeListSize() const;
+    void setEpisodeListSize(int size);
 
     QStringList feedUrls() const;
 

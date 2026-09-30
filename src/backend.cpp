@@ -36,6 +36,30 @@ QString coverExtension(const QByteArray &bytes, const QString &contentType)
         return QStringLiteral("webp");
     return QStringLiteral("jpg");
 }
+
+QString episodeCoverUrl(const EpisodeRow &row)
+{
+    if (!row.imagePath.isEmpty() && QFileInfo::exists(row.imagePath))
+        return QUrl::fromLocalFile(row.imagePath).toString();
+    return row.imageUrl;
+}
+
+QString showCoverUrl(const Library &library, qint64 showId)
+{
+    const QString path = library.showImage(showId);
+    if (path.isEmpty() || !QFileInfo::exists(path))
+        return {};
+    return QUrl::fromLocalFile(path).toString();
+}
+
+// Episode local cache, then remote URL, then show cover. Used by Now Playing / PlayerBar.
+QString preferredPlayerArt(const Library &library, const EpisodeRow &row)
+{
+    const QString episodeArt = episodeCoverUrl(row);
+    if (!episodeArt.isEmpty())
+        return episodeArt;
+    return showCoverUrl(library, row.showId);
+}
 }
 
 Backend::Backend(Library &library, QObject *parent)
@@ -43,6 +67,7 @@ Backend::Backend(Library &library, QObject *parent)
     , m_library(library)
 {
     m_playerRate = m_library.rate();
+    m_playerVolume = m_library.volume();
     reloadShows();
     auto *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &Backend::pollPlayer);
@@ -75,6 +100,7 @@ void Backend::reloadShows()
         for (const auto &row : rows) {
             if (row.id == m_openShowId) {
                 m_openShowTitle = row.title;
+                m_openShowCover = showCoverUrl(m_library, row.id);
                 m_openShowUnheard = row.unheard;
                 found = true;
                 break;
@@ -83,10 +109,21 @@ void Backend::reloadShows()
         if (!found) {
             m_openShowId = 0;
             m_openShowTitle.clear();
+            m_openShowCover.clear();
             m_openShowUnheard = 0;
+            m_openEpisodeId = 0;
+            m_openEpisodeTitle.clear();
+            m_openEpisodeDescription.clear();
+            m_openEpisodeCover.clear();
+            m_openEpisodePublished = 0;
+            m_openEpisodeDuration = 0;
+            m_openEpisodePlayed = false;
+            m_openEpisodePositionMs = 0;
             m_episodes.setRows({});
+            emit openEpisodeChanged();
         }
         emit openShowChanged();
+        refreshOpenEpisode();
     }
 }
 
@@ -96,6 +133,7 @@ void Backend::reloadEpisodes()
         return;
     m_episodes.setRows(m_library.episodes(m_openShowId));
     reloadShows();
+    refreshOpenEpisode();
 }
 
 void Backend::addFeed(const QString &url)
@@ -147,9 +185,11 @@ void Backend::refreshOpenShow()
 
 void Backend::openShow(qint64 showId)
 {
+    const bool episodeOpen = m_openEpisodeId != 0;
     m_openShowId = showId;
     m_episodes.setRows(m_library.episodes(showId));
     m_openShowTitle = m_library.showTitle(showId);
+    m_openShowCover = showCoverUrl(m_library, showId);
     m_openShowUnheard = 0;
     for (const auto &row : m_library.shows()) {
         if (row.id == showId) {
@@ -157,6 +197,8 @@ void Backend::openShow(qint64 showId)
             break;
         }
     }
+    if (episodeOpen)
+        closeEpisode();
     emit openShowChanged();
 }
 
@@ -164,11 +206,104 @@ void Backend::closeShow()
 {
     if (m_openShowId == 0)
         return;
+    if (m_openEpisodeId != 0)
+        closeEpisode();
     m_openShowId = 0;
     m_openShowTitle.clear();
+    m_openShowCover.clear();
     m_openShowUnheard = 0;
     m_episodes.setRows({});
     emit openShowChanged();
+}
+
+void Backend::refreshOpenEpisode()
+{
+    if (m_openEpisodeId == 0)
+        return;
+    const EpisodeRow row = m_library.episode(m_openEpisodeId);
+    if (row.id == 0 || (m_openShowId != 0 && row.showId != m_openShowId)) {
+        closeEpisode();
+        return;
+    }
+    m_openEpisodeTitle = row.title;
+    m_openEpisodeDescription = row.description;
+    m_openEpisodeCover = episodeCoverUrl(row);
+    m_openEpisodePublished = row.published;
+    m_openEpisodeDuration = row.durationSecs;
+    m_openEpisodePlayed = row.played;
+    m_openEpisodePositionMs = row.positionMs;
+    emit openEpisodeChanged();
+}
+
+void Backend::openEpisode(qint64 episodeId)
+{
+    if (episodeId == 0)
+        return;
+    const EpisodeRow row = m_library.episode(episodeId);
+    if (row.id == 0)
+        return;
+    m_returnToShelfOnClose = false;
+    if (m_openShowId == 0 || m_openShowId != row.showId) {
+        // openShow clears any prior episode; set this one after.
+        m_openShowId = row.showId;
+        m_episodes.setRows(m_library.episodes(row.showId));
+        m_openShowTitle = m_library.showTitle(row.showId);
+        m_openShowCover = showCoverUrl(m_library, row.showId);
+        m_openShowUnheard = 0;
+        for (const auto &show : m_library.shows()) {
+            if (show.id == row.showId) {
+                m_openShowUnheard = show.unheard;
+                break;
+            }
+        }
+        emit openShowChanged();
+    }
+    m_openEpisodeId = row.id;
+    m_openEpisodeTitle = row.title;
+    m_openEpisodeDescription = row.description;
+    m_openEpisodeCover = episodeCoverUrl(row);
+    m_openEpisodePublished = row.published;
+    m_openEpisodeDuration = row.durationSecs;
+    m_openEpisodePlayed = row.played;
+    m_openEpisodePositionMs = row.positionMs;
+    emit openEpisodeChanged();
+    if (!row.imageUrl.isEmpty() && row.imagePath.isEmpty())
+        downloadEpisodeCover(row.id, row.imageUrl);
+}
+
+void Backend::closeEpisode()
+{
+    if (m_openEpisodeId == 0)
+        return;
+    const bool returnToShelf = m_returnToShelfOnClose;
+    m_returnToShelfOnClose = false;
+    m_openEpisodeId = 0;
+    m_openEpisodeTitle.clear();
+    m_openEpisodeDescription.clear();
+    m_openEpisodeCover.clear();
+    m_openEpisodePublished = 0;
+    m_openEpisodeDuration = 0;
+    m_openEpisodePlayed = false;
+    m_openEpisodePositionMs = 0;
+    if (returnToShelf && m_openShowId != 0) {
+        m_openShowId = 0;
+        m_openShowTitle.clear();
+        m_openShowCover.clear();
+        m_openShowUnheard = 0;
+        m_episodes.setRows({});
+        emit openEpisodeChanged();
+        emit openShowChanged();
+        return;
+    }
+    emit openEpisodeChanged();
+}
+
+void Backend::openPlayingEpisode()
+{
+    if (m_playerEpisodeId == 0)
+        return;
+    openEpisode(m_playerEpisodeId);
+    m_returnToShelfOnClose = true;
 }
 
 void Backend::removeOpenShow()
@@ -292,6 +427,65 @@ void Backend::downloadCover(qint64 showId, const QString &imageUrl)
     });
 }
 
+void Backend::downloadEpisodeCover(qint64 episodeId, const QString &imageUrl)
+{
+    if (episodeId == 0 || imageUrl.isEmpty())
+        return;
+    if (m_episodeCoverDownloads.contains(episodeId))
+        return;
+    m_episodeCoverDownloads.insert(episodeId);
+    QNetworkRequest request{QUrl(imageUrl)};
+    request.setHeader(QNetworkRequest::UserAgentHeader,
+                      QStringLiteral("podcast/0.1 (Omarchy)"));
+    request.setTransferTimeout(20000);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, episodeId, imageUrl]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            m_episodeCoverDownloads.remove(episodeId);
+            return;
+        }
+        const QByteArray bytes = reply->readAll();
+        if (bytes.size() < 32) {
+            m_episodeCoverDownloads.remove(episodeId);
+            return;
+        }
+        const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+            + QStringLiteral("/episode-covers");
+        QDir().mkpath(dir);
+        const QString ext = coverExtension(
+            bytes, reply->header(QNetworkRequest::ContentTypeHeader).toString());
+        const QString path = QStringLiteral("%1/%2.%3").arg(dir).arg(episodeId).arg(ext);
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly)) {
+            m_episodeCoverDownloads.remove(episodeId);
+            return;
+        }
+        file.write(bytes);
+        file.close();
+        m_library.setEpisodeImage(episodeId, imageUrl, path);
+        m_episodeCoverDownloads.remove(episodeId);
+        if (m_openShowId != 0)
+            reloadEpisodes();
+        else if (m_openEpisodeId == episodeId)
+            refreshOpenEpisode();
+        // Swap Now Playing / bar art to the episode cover once it lands.
+        if (m_playerEpisodeId == episodeId) {
+            m_playerArt = QUrl::fromLocalFile(path).toString();
+            emit playerStateChanged();
+            // Keep the detached player / MPRIS art in sync with the local cache.
+            if (QDBusConnection::sessionBus().interface()
+                    ->isServiceRegistered(kPlayerService)) {
+                if (!m_player) {
+                    m_player = new QDBusInterface(kPlayerService, kPlayerPath, kPlayerIface,
+                                                  QDBusConnection::sessionBus(), this);
+                }
+                m_player->call(QDBus::Block, QStringLiteral("RefreshArt"));
+            }
+        }
+    });
+}
+
 bool Backend::ensurePlayer()
 {
     auto *bus = QDBusConnection::sessionBus().interface();
@@ -332,6 +526,9 @@ void Backend::playEpisode(qint64 episodeId)
         togglePlayback();
         return;
     }
+    const EpisodeRow row = m_library.episode(episodeId);
+    if (!row.imageUrl.isEmpty() && row.imagePath.isEmpty())
+        downloadEpisodeCover(row.id, row.imageUrl);
     callPlayer(QStringLiteral("Load"), {QVariant::fromValue<qlonglong>(episodeId)});
 }
 
@@ -351,6 +548,18 @@ void Backend::stopPlayback()
 void Backend::seekTo(double seconds)
 {
     callPlayer(QStringLiteral("SeekTo"), {seconds});
+}
+
+void Backend::setVolume(double volume)
+{
+    const double clamped = qBound(0.0, volume, 1.0);
+    if (qAbs(clamped - m_playerVolume) < 0.0005)
+        return;
+    m_playerVolume = clamped;
+    m_library.setVolume(clamped);
+    emit playerStateChanged();
+    if (QDBusConnection::sessionBus().interface()->isServiceRegistered(kPlayerService))
+        callPlayer(QStringLiteral("SetVolume"), {clamped});
 }
 
 void Backend::cycleRate()
@@ -408,6 +617,20 @@ void Backend::setShelfListSize(int size)
     if (next == m_library.shelfListSize())
         return;
     m_library.setShelfListSize(next);
+    emit shelfLayoutChanged();
+}
+
+int Backend::episodeListSize() const
+{
+    return m_library.episodeListSize();
+}
+
+void Backend::setEpisodeListSize(int size)
+{
+    const int next = qBound(0, size, 4);
+    if (next == m_library.episodeListSize())
+        return;
+    m_library.setEpisodeListSize(next);
     emit shelfLayoutChanged();
 }
 
@@ -485,18 +708,34 @@ void Backend::applyPlayerState(const QVariantMap &state)
     const qint64 showId = state.value(QStringLiteral("showId")).toLongLong();
     const QString title = state.value(QStringLiteral("title")).toString();
     const QString showTitle = state.value(QStringLiteral("showTitle")).toString();
-    const QString art = state.value(QStringLiteral("art")).toString();
+    QString art = state.value(QStringLiteral("art")).toString();
+    // Prefer library episode art (cache or URL) over whatever the player last published,
+    // so Now Playing / PlayerBar never stay stuck on show cover after a download lands.
+    if (episodeId != 0) {
+        const EpisodeRow row = m_library.episode(episodeId);
+        if (row.id != 0) {
+            const QString preferred = preferredPlayerArt(m_library, row);
+            if (!preferred.isEmpty())
+                art = preferred;
+        }
+    }
     const QString status = state.value(QStringLiteral("status"), QStringLiteral("stopped")).toString();
     const QString error = state.value(QStringLiteral("error")).toString();
     const bool played = state.value(QStringLiteral("played")).toBool();
     const double rate = state.value(QStringLiteral("rate"), m_library.rate()).toDouble();
+    const double volume = state.contains(QStringLiteral("volume"))
+        ? state.value(QStringLiteral("volume")).toDouble()
+        : m_library.volume();
+    const QString description = state.value(QStringLiteral("description")).toString();
     const double position = state.value(QStringLiteral("position")).toDouble();
     const double duration = state.value(QStringLiteral("duration")).toDouble();
 
     const bool structural = episodeId != m_playerEpisodeId || showId != m_playerShowId
         || title != m_playerTitle || showTitle != m_playerShowTitle || art != m_playerArt
         || status != m_playerStatus || error != m_playerError || played != m_playerPlayed
-        || qAbs(rate - m_playerRate) > 0.001 || qAbs(duration - m_playerDuration) > 0.5;
+        || description != m_playerDescription
+        || qAbs(rate - m_playerRate) > 0.001 || qAbs(volume - m_playerVolume) > 0.001
+        || qAbs(duration - m_playerDuration) > 0.5;
     const bool playedFlipped = played != m_sawPlayed && episodeId != 0;
     m_sawPlayed = played;
 
@@ -505,10 +744,12 @@ void Backend::applyPlayerState(const QVariantMap &state)
     m_playerTitle = title;
     m_playerShowTitle = showTitle;
     m_playerArt = art;
+    m_playerDescription = description;
     m_playerStatus = status.isEmpty() ? QStringLiteral("stopped") : status;
     m_playerError = error;
     m_playerPlayed = played;
     m_playerRate = rate > 0 ? rate : 1;
+    m_playerVolume = qBound(0.0, volume, 1.0);
     m_playerDuration = duration;
     if (qAbs(position - m_playerPosition) > 0.05) {
         m_playerPosition = position;

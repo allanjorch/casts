@@ -4,6 +4,7 @@ import QtQuick.Controls
 Rectangle {
     id: bar
     signal markAllRequested()
+    signal nowPlayingRequested()
     color: theme.darkMode ? Qt.darker(theme.background, 1.25) : Qt.lighter(theme.background, 1.08)
     implicitHeight: 96 * theme.textScale
     height: implicitHeight
@@ -38,6 +39,16 @@ Rectangle {
         return (rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)) + "×"
     }
 
+    function volumeIcon(value) {
+        if (value <= 0.001)
+            return "audio-volume-muted-symbolic"
+        if (value < 0.34)
+            return "audio-volume-low-symbolic"
+        if (value < 0.67)
+            return "audio-volume-medium-symbolic"
+        return "audio-volume-high-symbolic"
+    }
+
     function nudge(seconds) {
         var next = backend.playerPosition + seconds
         if (next < 0)
@@ -53,21 +64,28 @@ Rectangle {
         anchors.rightMargin: 16
         spacing: 14
 
-        Image {
+        Item {
             width: 52 * theme.textScale
             height: width
             anchors.verticalCenter: parent.verticalCenter
-            source: backend.playerArt
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            visible: backend.playerArt !== ""
-        }
-        Rectangle {
-            visible: backend.playerArt === ""
-            width: 52 * theme.textScale
-            height: width
-            anchors.verticalCenter: parent.verticalCenter
-            color: theme.selection
+
+            Image {
+                anchors.fill: parent
+                source: backend.playerArt
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                visible: backend.playerArt !== ""
+            }
+            Rectangle {
+                anchors.fill: parent
+                visible: backend.playerArt === ""
+                color: theme.selection
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: bar.nowPlayingRequested()
+            }
         }
 
         Column {
@@ -108,9 +126,25 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
                     IconButton {
+                        id: volumeButton
+                        icon.name: bar.volumeIcon(backend.playerVolume)
+                        tip: "Volume"
+                        onClicked: {
+                            volumePopup.x = volumeButton.mapToItem(bar, 0, 0).x
+                                          + volumeButton.width / 2 - volumePopup.width / 2
+                            volumePopup.y = -volumePopup.height - 8
+                            volumePopup.open()
+                        }
+                    }
+                    IconButton {
                         caption: rateLabel(backend.playerRate)
                         tip: "Playback speed"
                         onClicked: backend.cycleRate()
+                    }
+                    IconButton {
+                        icon.name: "view-fullscreen-symbolic"
+                        tip: "Now playing"
+                        onClicked: bar.nowPlayingRequested()
                     }
                     IconButton {
                         icon.name: "check-plain-symbolic"
@@ -122,6 +156,7 @@ Rectangle {
                     }
                 }
                 Text {
+                    id: titleText
                     anchors.left: transport.right
                     anchors.right: extras.left
                     anchors.verticalCenter: parent.verticalCenter
@@ -132,6 +167,12 @@ Rectangle {
                     font.pixelSize: theme.titleSize
                     font.weight: Font.Normal
                     elide: Text.ElideRight
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: backend.openPlayingEpisode()
+                    }
                 }
             }
 
@@ -190,6 +231,78 @@ Rectangle {
                     color: theme.dim
                     font.pixelSize: theme.caption
                     font.weight: Font.Normal
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: volumePopup
+        parent: bar
+        width: 44 * theme.textScale
+        height: 148 * theme.textScale
+        padding: 10
+        modal: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        background: Rectangle {
+            color: theme.background
+            border.color: theme.selection
+            border.width: 1
+            radius: 8
+        }
+
+        contentItem: Column {
+            spacing: 8
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: Math.round(backend.playerVolume * 100) + "%"
+                color: theme.dim
+                font.pixelSize: theme.caption
+                font.weight: Font.Normal
+                font.family: "monospace"
+            }
+            Slider {
+                id: volumeSlider
+                width: parent.width
+                height: 100 * theme.textScale
+                from: 0
+                to: 1
+                stepSize: 0.01
+                value: backend.playerVolume
+                orientation: Qt.Vertical
+                onMoved: backend.setVolume(value)
+
+                background: Item {
+                    x: volumeSlider.leftPadding + volumeSlider.availableWidth / 2 - width / 2
+                    y: volumeSlider.topPadding
+                    implicitWidth: 6
+                    implicitHeight: volumeSlider.availableHeight
+                    width: implicitWidth
+                    height: volumeSlider.availableHeight
+                    Rectangle {
+                        width: parent.width
+                        height: parent.height
+                        radius: 3
+                        color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)
+                    }
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: parent.height * volumeSlider.position
+                        radius: 3
+                        color: theme.accent
+                    }
+                }
+                handle: Rectangle {
+                    x: volumeSlider.leftPadding + volumeSlider.availableWidth / 2 - width / 2
+                    y: volumeSlider.topPadding + volumeSlider.visualPosition * (volumeSlider.availableHeight - height)
+                    implicitWidth: 14 * theme.textScale
+                    implicitHeight: implicitWidth
+                    radius: width / 2
+                    color: theme.foreground
                 }
             }
         }

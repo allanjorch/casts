@@ -78,6 +78,12 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         height: 64 * theme.textScale
+        z: 1
+
+        Rectangle {
+            anchors.fill: parent
+            color: theme.background
+        }
 
         Text {
             id: title
@@ -157,6 +163,7 @@ Item {
         leftMargin: 16
         rightMargin: 16
         topMargin: 4
+        clip: true
         cellWidth: shelf.cellWidth
         cellHeight: shelf.cellHeight
         boundsBehavior: Flickable.StopAtBounds
@@ -262,6 +269,7 @@ Item {
         leftMargin: 12
         rightMargin: 12
         topMargin: 4
+        clip: true
         boundsBehavior: Flickable.StopAtBounds
         model: backend.shows
         cacheBuffer: height

@@ -30,7 +30,9 @@ int runSelfTest(int argc, char **argv)
     check(parsePublished(QStringLiteral("2026-01-02T00:00:00Z")) > 0, "iso");
 
     const QByteArray rss = R"(<?xml version="1.0"?>
-<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:media="http://search.yahoo.com/mrss/">
 <channel>
 <title>Sample Show</title>
 <itunes:author>Ada</itunes:author>
@@ -40,6 +42,9 @@ int runSelfTest(int argc, char **argv)
   <guid>n</guid>
   <pubDate>Wed, 10 Jun 2026 12:00:00 +0000</pubDate>
   <itunes:duration>1:02:03</itunes:duration>
+  <description>Short blurb</description>
+  <content:encoded><![CDATA[<p>Full <b>episode</b> notes.</p>]]></content:encoded>
+  <itunes:image href="https://example.com/ep-n.jpg"/>
   <enclosure url="https://example.com/n.mp3" type="audio/mpeg"/>
 </item>
 <item>
@@ -47,6 +52,8 @@ int runSelfTest(int argc, char **argv)
   <guid>m</guid>
   <pubDate>Wed, 03 Jun 2026 12:00:00 +0000</pubDate>
   <itunes:duration>90</itunes:duration>
+  <itunes:summary>Middle summary only</itunes:summary>
+  <media:thumbnail url="https://example.com/ep-m.jpg"/>
   <enclosure url="https://example.com/m.mp3" type="audio/mpeg"/>
 </item>
 <item>
@@ -76,6 +83,15 @@ int runSelfTest(int argc, char **argv)
             check(parsed->episodes.at(0).title == QStringLiteral("Newest"), "newest title");
             check(parsed->episodes.at(0).durationSecs == 3723, "newest duration");
             check(parsed->episodes.at(0).published > parsed->episodes.at(1).published, "date order");
+            check(parsed->episodes.at(0).description.contains(QStringLiteral("Full episode notes")),
+                  "content:encoded preferred");
+            check(parsed->episodes.at(0).imageUrl == QStringLiteral("https://example.com/ep-n.jpg"),
+                  "itunes episode image");
+            check(parsed->episodes.at(1).description == QStringLiteral("Middle summary only"),
+                  "itunes summary");
+            check(parsed->episodes.at(1).imageUrl == QStringLiteral("https://example.com/ep-m.jpg"),
+                  "media thumbnail");
+            check(parsed->episodes.at(2).description.isEmpty(), "missing description stays empty");
             check(parsed->episodes.at(2).audioUrl.endsWith(QStringLiteral("o.m4a")), "m4a kept");
         }
     }
@@ -117,6 +133,10 @@ int runSelfTest(int argc, char **argv)
         const auto episodes = library.episodes(showId);
         check(episodes.size() == 3, "stored episodes");
         if (episodes.size() == 3) {
+            check(episodes.at(0).description.contains(QStringLiteral("Full episode notes")),
+                  "stored description");
+            check(episodes.at(0).imageUrl == QStringLiteral("https://example.com/ep-n.jpg"),
+                  "stored episode image");
             const qint64 newest = episodes.at(0).id;
             const qint64 middle = episodes.at(1).id;
             const qint64 older = episodes.at(2).id;
@@ -149,7 +169,8 @@ int runSelfTest(int argc, char **argv)
             episode.guid += QStringLiteral("-c");
         library.upsertShow(QStringLiteral("https://example.com/fresh.xml"), fresh);
 
-        library.markPlayed(library.episodes(showId).at(0).id, false);
+        if (!library.episodes(showId).isEmpty())
+            library.markPlayed(library.episodes(showId).at(0).id, false);
         const auto shelf = library.shows();
         check(shelf.size() == 3, "three shows");
         if (shelf.size() == 3) {
@@ -170,6 +191,11 @@ int runSelfTest(int argc, char **argv)
         check(library.shelfListSize() == 0, "list cover stays at least the smallest");
         library.setShelfListSize(9);
         check(library.shelfListSize() == 4, "list cover stays at most the largest");
+        check(library.episodeListSize() == 0, "episode list cover starts at the smallest");
+        library.setEpisodeListSize(-3);
+        check(library.episodeListSize() == 0, "episode list cover stays at least the smallest");
+        library.setEpisodeListSize(9);
+        check(library.episodeListSize() == 4, "episode list cover stays at most the largest");
     }
 
     if (g_fails == 0) {

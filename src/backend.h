@@ -6,6 +6,7 @@
 #include <QNetworkAccessManager>
 #include <QObject>
 #include <QPointer>
+#include <QSet>
 #include <QStringList>
 #include <QVariantMap>
 
@@ -20,7 +21,16 @@ class Backend : public QObject {
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(qint64 openShowId READ openShowId NOTIFY openShowChanged)
     Q_PROPERTY(QString openShowTitle READ openShowTitle NOTIFY openShowChanged)
+    Q_PROPERTY(QString openShowCover READ openShowCover NOTIFY openShowChanged)
     Q_PROPERTY(int openShowUnheard READ openShowUnheard NOTIFY openShowChanged)
+    Q_PROPERTY(qint64 openEpisodeId READ openEpisodeId NOTIFY openEpisodeChanged)
+    Q_PROPERTY(QString openEpisodeTitle READ openEpisodeTitle NOTIFY openEpisodeChanged)
+    Q_PROPERTY(QString openEpisodeDescription READ openEpisodeDescription NOTIFY openEpisodeChanged)
+    Q_PROPERTY(QString openEpisodeCover READ openEpisodeCover NOTIFY openEpisodeChanged)
+    Q_PROPERTY(qint64 openEpisodePublished READ openEpisodePublished NOTIFY openEpisodeChanged)
+    Q_PROPERTY(int openEpisodeDuration READ openEpisodeDuration NOTIFY openEpisodeChanged)
+    Q_PROPERTY(bool openEpisodePlayed READ openEpisodePlayed NOTIFY openEpisodeChanged)
+    Q_PROPERTY(int openEpisodePositionMs READ openEpisodePositionMs NOTIFY openEpisodeChanged)
 
     Q_PROPERTY(qint64 playerEpisodeId READ playerEpisodeId NOTIFY playerStateChanged)
     Q_PROPERTY(qint64 playerShowId READ playerShowId NOTIFY playerStateChanged)
@@ -31,11 +41,14 @@ class Backend : public QObject {
     Q_PROPERTY(QString playerError READ playerError NOTIFY playerStateChanged)
     Q_PROPERTY(bool playerPlayed READ playerPlayed NOTIFY playerStateChanged)
     Q_PROPERTY(double playerRate READ playerRate NOTIFY playerStateChanged)
+    Q_PROPERTY(double playerVolume READ playerVolume NOTIFY playerStateChanged)
+    Q_PROPERTY(QString playerDescription READ playerDescription NOTIFY playerStateChanged)
     Q_PROPERTY(double playerPosition READ playerPosition NOTIFY playerPositionChanged)
     Q_PROPERTY(double playerDuration READ playerDuration NOTIFY playerStateChanged)
     Q_PROPERTY(QString shelfView READ shelfView NOTIFY shelfLayoutChanged)
     Q_PROPERTY(int shelfColumns READ shelfColumns NOTIFY shelfLayoutChanged)
     Q_PROPERTY(int shelfListSize READ shelfListSize NOTIFY shelfLayoutChanged)
+    Q_PROPERTY(int episodeListSize READ episodeListSize NOTIFY shelfLayoutChanged)
 
 public:
     explicit Backend(Library &library, QObject *parent = nullptr);
@@ -46,7 +59,16 @@ public:
     bool busy() const { return m_busy; }
     qint64 openShowId() const { return m_openShowId; }
     QString openShowTitle() const { return m_openShowTitle; }
+    QString openShowCover() const { return m_openShowCover; }
     int openShowUnheard() const { return m_openShowUnheard; }
+    qint64 openEpisodeId() const { return m_openEpisodeId; }
+    QString openEpisodeTitle() const { return m_openEpisodeTitle; }
+    QString openEpisodeDescription() const { return m_openEpisodeDescription; }
+    QString openEpisodeCover() const { return m_openEpisodeCover; }
+    qint64 openEpisodePublished() const { return m_openEpisodePublished; }
+    int openEpisodeDuration() const { return m_openEpisodeDuration; }
+    bool openEpisodePlayed() const { return m_openEpisodePlayed; }
+    int openEpisodePositionMs() const { return m_openEpisodePositionMs; }
 
     qint64 playerEpisodeId() const { return m_playerEpisodeId; }
     qint64 playerShowId() const { return m_playerShowId; }
@@ -57,11 +79,14 @@ public:
     QString playerError() const { return m_playerError; }
     bool playerPlayed() const { return m_playerPlayed; }
     double playerRate() const { return m_playerRate; }
+    double playerVolume() const { return m_playerVolume; }
+    QString playerDescription() const { return m_playerDescription; }
     double playerPosition() const { return m_playerPosition; }
     double playerDuration() const { return m_playerDuration; }
     QString shelfView() const;
     int shelfColumns() const;
     int shelfListSize() const;
+    int episodeListSize() const;
 
     Q_INVOKABLE void addFeed(const QString &url);
     Q_INVOKABLE void importOpml(const QString &fileUrl);
@@ -69,6 +94,9 @@ public:
     Q_INVOKABLE void refreshOpenShow();
     Q_INVOKABLE void openShow(qint64 showId);
     Q_INVOKABLE void closeShow();
+    Q_INVOKABLE void openEpisode(qint64 episodeId);
+    Q_INVOKABLE void openPlayingEpisode();
+    Q_INVOKABLE void closeEpisode();
     Q_INVOKABLE void removeOpenShow();
 
     Q_INVOKABLE void playEpisode(qint64 episodeId);
@@ -76,9 +104,11 @@ public:
     Q_INVOKABLE void stopPlayback();
     Q_INVOKABLE void seekTo(double seconds);
     Q_INVOKABLE void cycleRate();
+    Q_INVOKABLE void setVolume(double volume);
     Q_INVOKABLE void setShelfView(const QString &view);
     Q_INVOKABLE void setShelfColumns(int columns);
     Q_INVOKABLE void setShelfListSize(int size);
+    Q_INVOKABLE void setEpisodeListSize(int size);
     Q_INVOKABLE void markPlayed(qint64 episodeId, bool played);
     Q_INVOKABLE void markAllPlayed(qint64 showId);
     Q_INVOKABLE void markOlderPlayed(qint64 episodeId);
@@ -92,6 +122,7 @@ signals:
     void statusChanged();
     void busyChanged();
     void openShowChanged();
+    void openEpisodeChanged();
     void playerStateChanged();
     void playerPositionChanged();
     void shelfLayoutChanged();
@@ -109,6 +140,8 @@ private:
     void enqueue(const QStringList &urls);
     void fetchNext();
     void downloadCover(qint64 showId, const QString &imageUrl);
+    void downloadEpisodeCover(qint64 episodeId, const QString &imageUrl);
+    void refreshOpenEpisode();
     bool ensurePlayer();
     void pollPlayer();
     void applyPlayerState(const QVariantMap &state);
@@ -126,7 +159,16 @@ private:
     bool m_busy = false;
     qint64 m_openShowId = 0;
     QString m_openShowTitle;
+    QString m_openShowCover;
     int m_openShowUnheard = 0;
+    qint64 m_openEpisodeId = 0;
+    QString m_openEpisodeTitle;
+    QString m_openEpisodeDescription;
+    QString m_openEpisodeCover;
+    qint64 m_openEpisodePublished = 0;
+    int m_openEpisodeDuration = 0;
+    bool m_openEpisodePlayed = false;
+    int m_openEpisodePositionMs = 0;
 
     qint64 m_playerEpisodeId = 0;
     qint64 m_playerShowId = 0;
@@ -137,8 +179,12 @@ private:
     QString m_playerError;
     bool m_playerPlayed = false;
     double m_playerRate = 1;
+    double m_playerVolume = 1;
+    QString m_playerDescription;
     double m_playerPosition = 0;
     double m_playerDuration = 0;
     bool m_sawPlayed = false;
+    bool m_returnToShelfOnClose = false;
     QDBusInterface *m_player = nullptr;
+    QSet<qint64> m_episodeCoverDownloads;
 };

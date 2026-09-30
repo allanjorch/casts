@@ -14,17 +14,32 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QVariant>
+#include <QMouseEvent>
 #include <QWheelEvent>
 
-class ShelfWheelFilter : public QObject {
+class WindowInputFilter : public QObject {
 public:
     QObject *window = nullptr;
 
     bool eventFilter(QObject *watched, QEvent *event) override
     {
-        if (!window || event->type() != QEvent::Wheel)
+        if (!window || !eventIsOurs(watched))
             return false;
-        if (!eventIsOurs(watched))
+
+        if (event->type() == QEvent::MouseButtonPress) {
+            const auto *mouse = static_cast<const QMouseEvent *>(event);
+            if (mouse->button() == Qt::BackButton) {
+                QMetaObject::invokeMethod(window, "navigateBack", Qt::DirectConnection);
+                return true;
+            }
+            if (mouse->button() == Qt::ForwardButton) {
+                QMetaObject::invokeMethod(window, "navigateForward", Qt::DirectConnection);
+                return true;
+            }
+            return false;
+        }
+
+        if (event->type() != QEvent::Wheel)
             return false;
         const auto *wheel = static_cast<const QWheelEvent *>(event);
         if (!(wheel->modifiers() & Qt::ControlModifier))
@@ -126,9 +141,9 @@ int main(int argc, char **argv)
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty())
         return 1;
-    ShelfWheelFilter wheelFilter;
-    wheelFilter.window = engine.rootObjects().constFirst();
-    app.installEventFilter(&wheelFilter);
+    WindowInputFilter inputFilter;
+    inputFilter.window = engine.rootObjects().constFirst();
+    app.installEventFilter(&inputFilter);
     return app.exec();
 }
 

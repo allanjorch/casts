@@ -83,6 +83,8 @@ QVariant EpisodeModel::data(const QModelIndex &index, int role) const
         return row.showId;
     case TitleRole:
         return row.title;
+    case DescriptionRole:
+        return row.description;
     case PublishedRole:
         return row.published;
     case DurationRole:
@@ -93,6 +95,14 @@ QVariant EpisodeModel::data(const QModelIndex &index, int role) const
         return row.positionMs;
     case AudioRole:
         return row.audioUrl;
+    case CoverRole: {
+        const QString local = coverUrl(row.imagePath);
+        if (!local.isEmpty())
+            return local;
+        if (row.imageUrl.isEmpty())
+            return {};
+        return row.imageUrl;
+    }
     default:
         return {};
     }
@@ -104,11 +114,13 @@ QHash<int, QByteArray> EpisodeModel::roleNames() const
         {EpisodeIdRole, "episodeId"},
         {ShowIdRole, "showId"},
         {TitleRole, "title"},
+        {DescriptionRole, "description"},
         {PublishedRole, "published"},
         {DurationRole, "duration"},
         {PlayedRole, "played"},
         {PositionRole, "positionMs"},
         {AudioRole, "audioUrl"},
+        {CoverRole, "cover"},
     };
 }
 

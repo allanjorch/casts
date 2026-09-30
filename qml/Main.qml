@@ -12,7 +12,8 @@ ApplicationWindow {
     minimumWidth: 720
     minimumHeight: 480
     visible: true
-    title: backend.openShowId === 0 ? "Podcasts" : backend.openShowTitle
+    title: backend.openEpisodeId !== 0 ? backend.openEpisodeTitle
+         : backend.openShowId === 0 ? "Podcasts" : backend.openShowTitle
     color: theme.background
     font.family: "monospace"
     font.weight: Font.Normal
@@ -31,6 +32,7 @@ ApplicationWindow {
     property bool addOpen: false
     property bool confirmAll: false
     property bool confirmRemove: false
+    property bool nowPlayingOpen: false
     property rect normalGeometry: Qt.rect(x, y, width, height)
     property bool wasMaximized: false
 
@@ -79,24 +81,119 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         onActivated: win.close()
     }
+    // Short forward stack for mouse Forward after Back (browser-style).
+    property var forwardStack: []
+    property bool navGuard: false
+
+    function clearForward() {
+        if (forwardStack.length > 0)
+            forwardStack = []
+    }
+
+    function pushForward(entry) {
+        forwardStack = forwardStack.concat([entry]).slice(-8)
+    }
+
+    function navigateBack() {
+        navGuard = true
+        if (nowPlayingOpen) {
+            pushForward({ kind: "nowPlaying" })
+            nowPlayingOpen = false
+        } else if (addOpen) {
+            addOpen = false
+        } else if (confirmAll) {
+            confirmAll = false
+        } else if (confirmRemove) {
+            confirmRemove = false
+        } else if (backend.openEpisodeId !== 0) {
+            var epId = backend.openEpisodeId
+            var showWas = backend.openShowId
+            backend.closeEpisode()
+            // openPlayingEpisode closes through to the shelf; remember that path.
+            if (backend.openShowId === 0 && showWas !== 0)
+                pushForward({ kind: "playingEpisode", id: epId })
+            else
+                pushForward({ kind: "episode", id: epId })
+        } else if (backend.openShowId !== 0) {
+            pushForward({ kind: "show", id: backend.openShowId })
+            backend.closeShow()
+        }
+        navGuard = false
+    }
+
+    function navigateForward() {
+        if (forwardStack.length === 0)
+            return
+        if (addOpen || confirmAll || confirmRemove)
+            return
+        var stack = forwardStack.slice()
+        var entry = stack.pop()
+        forwardStack = stack
+        navGuard = true
+        if (entry.kind === "nowPlaying") {
+            if (backend.playerEpisodeId !== 0)
+                nowPlayingOpen = true
+        } else if (entry.kind === "playingEpisode") {
+            if (backend.playerEpisodeId === entry.id)
+                backend.openPlayingEpisode()
+            else
+                backend.openEpisode(entry.id)
+        } else if (entry.kind === "episode") {
+            backend.openEpisode(entry.id)
+        } else if (entry.kind === "show") {
+            backend.openShow(entry.id)
+        }
+        navGuard = false
+    }
+
+    Connections {
+        target: backend
+        function onOpenShowChanged() {
+            if (!navGuard && backend.openShowId !== 0)
+                clearForward()
+        }
+        function onOpenEpisodeChanged() {
+            if (!navGuard && backend.openEpisodeId !== 0)
+                clearForward()
+        }
+    }
+    onNowPlayingOpenChanged: {
+        if (!navGuard && nowPlayingOpen)
+            clearForward()
+    }
+
     Shortcut {
         sequence: "Escape"
         context: Qt.ApplicationShortcut
-        onActivated: {
-            if (addOpen)
-                addOpen = false
-            else if (confirmAll)
-                confirmAll = false
-            else if (confirmRemove)
-                confirmRemove = false
-            else if (backend.openShowId !== 0)
-                backend.closeShow()
+        onActivated: navigateBack()
+    }
+    Shortcut {
+        sequence: "Alt+Left"
+        context: Qt.ApplicationShortcut
+        onActivated: navigateBack()
+    }
+    Shortcut {
+        sequence: "Alt+Right"
+        context: Qt.ApplicationShortcut
+        onActivated: navigateForward()
+    }
+    Shortcut {
+        sequence: "Backspace"
+        context: Qt.ApplicationShortcut
+        // Leave Backspace to TextField / TextInput / TextEdit / TextArea.
+        enabled: {
+            var item = win.activeFocusItem
+            return !(item instanceof TextInput || item instanceof TextEdit)
         }
+        onActivated: navigateBack()
     }
     function zoomFromWheel(delta) {
-        if (backend.openShowId !== 0 || addOpen || confirmAll || confirmRemove)
+        if (addOpen || confirmAll || confirmRemove || nowPlayingOpen || backend.openEpisodeId !== 0)
             return false
-        shelfView.applyZoomDelta(delta)
+        if (backend.openShowId !== 0)
+            showView.applyZoomDelta(delta)
+        else
+            shelfView.applyZoomDelta(delta)
         return true
     }
 
@@ -109,46 +206,75 @@ ApplicationWindow {
     Shortcut {
         sequences: [StandardKey.ZoomIn, "Ctrl+="]
         context: Qt.ApplicationShortcut
-        enabled: backend.openShowId === 0 && !addOpen && !confirmAll && !confirmRemove
-        onActivated: shelfView.zoomIn()
+        enabled: backend.openEpisodeId === 0 && !addOpen && !confirmAll && !confirmRemove && !nowPlayingOpen
+        onActivated: backend.openShowId !== 0 ? showView.zoomIn() : shelfView.zoomIn()
     }
     Shortcut {
         sequence: StandardKey.ZoomOut
         context: Qt.ApplicationShortcut
-        enabled: backend.openShowId === 0 && !addOpen && !confirmAll && !confirmRemove
-        onActivated: shelfView.zoomOut()
+        enabled: backend.openEpisodeId === 0 && !addOpen && !confirmAll && !confirmRemove && !nowPlayingOpen
+        onActivated: backend.openShowId !== 0 ? showView.zoomOut() : shelfView.zoomOut()
     }
 
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
-        ShelfView {
-            id: shelfView
+        // Content stack sits above the always-visible PlayerBar so Now Playing
+        // never paints under / behind the chrome.
+        Item {
+            id: contentStack
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: backend.openShowId === 0
-            onAddRequested: {
-                feedField.text = ""
-                win.addOpen = true
-                feedField.forceActiveFocus()
-            }
-            onImportRequested: opmlDialog.open()
-            onMarkAllRequested: win.confirmAll = true
-        }
+            clip: true
 
-        ShowView {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            visible: backend.openShowId !== 0
-            onMarkAllRequested: win.confirmAll = true
-            onRemoveRequested: win.confirmRemove = true
+            ShelfView {
+                id: shelfView
+                anchors.fill: parent
+                visible: backend.openShowId === 0
+                onAddRequested: {
+                    feedField.text = ""
+                    win.addOpen = true
+                    feedField.forceActiveFocus()
+                }
+                onImportRequested: opmlDialog.open()
+                onMarkAllRequested: win.confirmAll = true
+            }
+
+            ShowView {
+                id: showView
+                anchors.fill: parent
+                visible: backend.openShowId !== 0 && backend.openEpisodeId === 0
+                onMarkAllRequested: win.confirmAll = true
+                onRemoveRequested: win.confirmRemove = true
+            }
+
+            EpisodeView {
+                anchors.fill: parent
+                visible: backend.openEpisodeId !== 0
+                onMarkAllRequested: win.confirmAll = true
+            }
+
+            NowPlaying {
+                anchors.fill: parent
+                visible: win.nowPlayingOpen && backend.playerEpisodeId !== 0
+                onDismissRequested: win.nowPlayingOpen = false
+            }
         }
 
         PlayerBar {
             Layout.fillWidth: true
             visible: backend.playerEpisodeId !== 0
             onMarkAllRequested: win.confirmAll = true
+            onNowPlayingRequested: win.nowPlayingOpen = true
+        }
+    }
+
+    Connections {
+        target: backend
+        function onPlayerStateChanged() {
+            if (backend.playerEpisodeId === 0)
+                win.nowPlayingOpen = false
         }
     }
 

@@ -73,7 +73,10 @@ bool Library::migrate()
             " show_id INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,"
             " guid TEXT NOT NULL,"
             " title TEXT NOT NULL,"
+            " description TEXT NOT NULL DEFAULT '',"
             " audio_url TEXT NOT NULL,"
+            " image_url TEXT NOT NULL DEFAULT '',"
+            " image_path TEXT NOT NULL DEFAULT '',"
             " published_at INTEGER NOT NULL DEFAULT 0,"
             " duration_secs INTEGER NOT NULL DEFAULT 0,"
             " played INTEGER NOT NULL DEFAULT 0,"
@@ -86,6 +89,28 @@ bool Library::migrate()
     };
     for (const auto &sql : statements) {
         if (!q.exec(sql)) {
+            m_error = q.lastError().text();
+            return false;
+        }
+    }
+
+    const QStringList episodeColumns = {
+        QStringLiteral("description TEXT NOT NULL DEFAULT ''"),
+        QStringLiteral("image_url TEXT NOT NULL DEFAULT ''"),
+        QStringLiteral("image_path TEXT NOT NULL DEFAULT ''"),
+    };
+    QStringList existing;
+    if (!q.exec(QStringLiteral("PRAGMA table_info(episodes)"))) {
+        m_error = q.lastError().text();
+        return false;
+    }
+    while (q.next())
+        existing.append(q.value(1).toString());
+    for (const auto &column : episodeColumns) {
+        const QString name = column.section(QLatin1Char(' '), 0, 0);
+        if (existing.contains(name))
+            continue;
+        if (!q.exec(QStringLiteral("ALTER TABLE episodes ADD COLUMN %1").arg(column))) {
             m_error = q.lastError().text();
             return false;
         }
@@ -129,7 +154,8 @@ QList<EpisodeRow> Library::episodes(qint64 showId) const
     QList<EpisodeRow> rows;
     QSqlQuery q(dbOf(m_connection));
     q.prepare(QStringLiteral(
-        "SELECT id, show_id, guid, title, audio_url, published_at, duration_secs, played, position_ms"
+        "SELECT id, show_id, guid, title, description, audio_url, image_url, image_path,"
+        " published_at, duration_secs, played, position_ms"
         " FROM episodes WHERE show_id = ?"
         " ORDER BY published_at DESC, id DESC"));
     q.addBindValue(showId);
@@ -140,11 +166,14 @@ QList<EpisodeRow> Library::episodes(qint64 showId) const
         row.showId = q.value(1).toLongLong();
         row.guid = q.value(2).toString();
         row.title = q.value(3).toString();
-        row.audioUrl = q.value(4).toString();
-        row.published = q.value(5).toLongLong();
-        row.durationSecs = q.value(6).toInt();
-        row.played = q.value(7).toInt() != 0;
-        row.positionMs = q.value(8).toInt();
+        row.description = q.value(4).toString();
+        row.audioUrl = q.value(5).toString();
+        row.imageUrl = q.value(6).toString();
+        row.imagePath = q.value(7).toString();
+        row.published = q.value(8).toLongLong();
+        row.durationSecs = q.value(9).toInt();
+        row.played = q.value(10).toInt() != 0;
+        row.positionMs = q.value(11).toInt();
         rows.append(row);
     }
     return rows;
@@ -154,7 +183,8 @@ EpisodeRow Library::episode(qint64 id) const
 {
     QSqlQuery q(dbOf(m_connection));
     q.prepare(QStringLiteral(
-        "SELECT id, show_id, guid, title, audio_url, published_at, duration_secs, played, position_ms"
+        "SELECT id, show_id, guid, title, description, audio_url, image_url, image_path,"
+        " published_at, duration_secs, played, position_ms"
         " FROM episodes WHERE id = ?"));
     q.addBindValue(id);
     q.exec();
@@ -165,11 +195,14 @@ EpisodeRow Library::episode(qint64 id) const
     row.showId = q.value(1).toLongLong();
     row.guid = q.value(2).toString();
     row.title = q.value(3).toString();
-    row.audioUrl = q.value(4).toString();
-    row.published = q.value(5).toLongLong();
-    row.durationSecs = q.value(6).toInt();
-    row.played = q.value(7).toInt() != 0;
-    row.positionMs = q.value(8).toInt();
+    row.description = q.value(4).toString();
+    row.audioUrl = q.value(5).toString();
+    row.imageUrl = q.value(6).toString();
+    row.imagePath = q.value(7).toString();
+    row.published = q.value(8).toLongLong();
+    row.durationSecs = q.value(9).toInt();
+    row.played = q.value(10).toInt() != 0;
+    row.positionMs = q.value(11).toInt();
     return row;
 }
 
@@ -250,23 +283,35 @@ qint64 Library::upsertShow(const QString &feedUrl, const ParsedShow &parsed)
     }
 
     QSqlQuery upsert(db);
-    upsert.prepare(QStringLiteral(
-        "INSERT INTO episodes (show_id, guid, title, audio_url, published_at, duration_secs)"
-        " VALUES (?, ?, ?, ?, ?, ?)"
+    if (!upsert.prepare(QStringLiteral(
+        "INSERT INTO episodes (show_id, guid, title, description, audio_url, image_url,"
+        " published_at, duration_secs)"
+        " VALUES (?, ?, ?, COALESCE(?, ''), ?, COALESCE(?, ''), ?, ?)"
         " ON CONFLICT(show_id, guid) DO UPDATE SET"
         "  title = excluded.title,"
+        "  description = COALESCE(excluded.description, ''),"
         "  audio_url = excluded.audio_url,"
+        "  image_url = COALESCE(excluded.image_url, ''),"
+        "  image_path = CASE WHEN COALESCE(excluded.image_url, '') = episodes.image_url"
+        "                    THEN episodes.image_path ELSE '' END,"
         "  published_at = excluded.published_at,"
         "  duration_secs = CASE WHEN excluded.duration_secs > 0 THEN excluded.duration_secs"
-        "                       ELSE episodes.duration_secs END"));
+        "                       ELSE episodes.duration_secs END"))) {
+        m_error = upsert.lastError().text();
+        db.rollback();
+        return 0;
+    }
     for (const auto &ep : parsed.episodes) {
         upsert.addBindValue(showId);
         upsert.addBindValue(ep.guid);
         upsert.addBindValue(ep.title);
+        upsert.addBindValue(ep.description);
         upsert.addBindValue(ep.audioUrl);
+        upsert.addBindValue(ep.imageUrl);
         upsert.addBindValue(ep.published);
         upsert.addBindValue(ep.durationSecs);
         if (!upsert.exec()) {
+            m_error = upsert.lastError().text();
             db.rollback();
             return 0;
         }
@@ -293,6 +338,16 @@ void Library::setShowImage(qint64 showId, const QString &imageUrl, const QString
     q.addBindValue(imageUrl);
     q.addBindValue(imagePath);
     q.addBindValue(showId);
+    q.exec();
+}
+
+void Library::setEpisodeImage(qint64 episodeId, const QString &imageUrl, const QString &imagePath)
+{
+    QSqlQuery q(dbOf(m_connection));
+    q.prepare(QStringLiteral("UPDATE episodes SET image_url = ?, image_path = ? WHERE id = ?"));
+    q.addBindValue(imageUrl);
+    q.addBindValue(imagePath);
+    q.addBindValue(episodeId);
     q.exec();
 }
 
@@ -427,6 +482,21 @@ void Library::setRate(double rate)
     setSetting(QStringLiteral("rate"), QString::number(rate, 'f', 2));
 }
 
+double Library::volume() const
+{
+    bool ok = false;
+    const double value = setting(QStringLiteral("volume"), QStringLiteral("1")).toDouble(&ok);
+    if (!ok || value < 0.0 || value > 1.0)
+        return 1.0;
+    return value;
+}
+
+void Library::setVolume(double volume)
+{
+    const double clamped = qBound(0.0, volume, 1.0);
+    setSetting(QStringLiteral("volume"), QString::number(clamped, 'f', 3));
+}
+
 QString Library::shelfView() const
 {
     return setting(QStringLiteral("shelf.view"), QStringLiteral("gallery")) == QStringLiteral("list")
@@ -467,6 +537,21 @@ int Library::shelfListSize() const
 void Library::setShelfListSize(int size)
 {
     setSetting(QStringLiteral("shelf.listSize"), QString::number(qBound(0, size, 4)));
+}
+
+int Library::episodeListSize() const
+{
+    // Same five steps as ShelfView list covers (0 through 4).
+    bool ok = false;
+    const int value = setting(QStringLiteral("show.listSize"), QStringLiteral("0")).toInt(&ok);
+    if (!ok)
+        return 0;
+    return qBound(0, value, 4);
+}
+
+void Library::setEpisodeListSize(int size)
+{
+    setSetting(QStringLiteral("show.listSize"), QString::number(qBound(0, size, 4)));
 }
 
 QStringList Library::feedUrls() const

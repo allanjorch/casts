@@ -2,6 +2,7 @@
 
 #include <QDateTime>
 #include <QUrl>
+#include <QRegularExpression>
 #include <QXmlStreamReader>
 
 namespace {
@@ -38,6 +39,49 @@ QString resolveUrl(const QString &url, const QUrl &base)
         return {};
     const QUrl resolved = base.resolved(QUrl(url.trimmed()));
     return resolved.isValid() ? resolved.toString() : url.trimmed();
+}
+
+QString plainText(const QString &value)
+{
+    QString text = value.trimmed();
+    if (text.isEmpty())
+        return {};
+    if (text.contains(QLatin1Char('<'))) {
+        static const QRegularExpression breakTag(
+            QStringLiteral("<br\\s*/?>"), QRegularExpression::CaseInsensitiveOption);
+        static const QRegularExpression closePara(
+            QStringLiteral("</p\\s*>"), QRegularExpression::CaseInsensitiveOption);
+        static const QRegularExpression anyTag(QStringLiteral("<[^>]+>"));
+        text.replace(breakTag, QStringLiteral("\n"));
+        text.replace(closePara, QStringLiteral("\n"));
+        text.replace(anyTag, QString());
+    }
+    text.replace(QLatin1String("&nbsp;"), QLatin1String(" "));
+    text.replace(QLatin1String("&amp;"), QLatin1String("&"));
+    text.replace(QLatin1String("&lt;"), QLatin1String("<"));
+    text.replace(QLatin1String("&gt;"), QLatin1String(">"));
+    text.replace(QLatin1String("&quot;"), QLatin1String("\""));
+    text.replace(QLatin1String("&#39;"), QLatin1String("'"));
+    text.replace(QRegularExpression(QStringLiteral("[\t\r ]+")), QStringLiteral(" "));
+    text.replace(QRegularExpression(QStringLiteral("\n{3,}")), QStringLiteral("\n\n"));
+    return text.trimmed();
+}
+
+
+void preferDescription(ParsedEpisode &episode, const QString &value)
+{
+    const QString plain = plainText(value);
+    if (plain.isEmpty())
+        return;
+    if (episode.description.isEmpty() || plain.size() > episode.description.size())
+        episode.description = plain;
+}
+
+void considerImage(ParsedEpisode &episode, const QString &url, const QUrl &base)
+{
+    if (url.isEmpty() || !episode.imageUrl.isEmpty())
+        return;
+    episode.imageUrl = resolveUrl(url, base);
 }
 }
 
@@ -110,15 +154,23 @@ std::optional<ParsedShow> parseFeed(const QByteArray &xml, const QUrl &base, QSt
                 || reader.prefix() == QStringLiteral("media");
 
             if (inEpisode()) {
-                if (itunes && name == QStringLiteral("image") && current.imageUrl.isEmpty())
-                    current.imageUrl = resolveUrl(attrs.value(QStringLiteral("href")).toString(), base);
+                if (itunes && name == QStringLiteral("image"))
+                    considerImage(current, attrs.value(QStringLiteral("href")).toString(), base);
+                if (media && name == QStringLiteral("thumbnail"))
+                    considerImage(current, attrs.value(QStringLiteral("url")).toString(), base);
                 if (name == QStringLiteral("enclosure"))
                     considerAudio(current, attrs.value(QStringLiteral("url")).toString(),
                                   attrs.value(QStringLiteral("type")).toString(), base);
-                else if (media && name == QStringLiteral("content"))
-                    considerAudio(current, attrs.value(QStringLiteral("url")).toString(),
-                                  attrs.value(QStringLiteral("type")).toString(), base);
-                else if (name == QStringLiteral("link")
+                else if (media && name == QStringLiteral("content")) {
+                    const QString type = attrs.value(QStringLiteral("type")).toString();
+                    const QString medium = attrs.value(QStringLiteral("medium")).toString();
+                    const QString url = attrs.value(QStringLiteral("url")).toString();
+                    if (medium == QStringLiteral("image")
+                        || type.startsWith(QStringLiteral("image/"), Qt::CaseInsensitive))
+                        considerImage(current, url, base);
+                    else
+                        considerAudio(current, url, type, base);
+                } else if (name == QStringLiteral("link")
                          && attrs.value(QStringLiteral("rel")) == QStringLiteral("enclosure"))
                     considerAudio(current, attrs.value(QStringLiteral("href")).toString(),
                                   attrs.value(QStringLiteral("type")).toString(), base);
@@ -131,6 +183,10 @@ std::optional<ParsedShow> parseFeed(const QByteArray &xml, const QUrl &base, QSt
             const QString name = reader.name().toString();
             const QString value = text.trimmed();
             const bool episode = inEpisode();
+            const bool contentNs = reader.namespaceUri().toString().contains(QStringLiteral("content"))
+                || reader.prefix() == QStringLiteral("content");
+            const bool itunesEnd = reader.namespaceUri().toString().contains(QStringLiteral("itunes"))
+                || reader.prefix() == QStringLiteral("itunes");
             if (episode && name == QStringLiteral("title") && current.title.isEmpty())
                 current.title = value;
             else if (episode && (name == QStringLiteral("guid") || name == QStringLiteral("id"))
@@ -142,6 +198,19 @@ std::optional<ParsedShow> parseFeed(const QByteArray &xml, const QUrl &base, QSt
                 current.published = parsePublished(value);
             else if (episode && name == QStringLiteral("duration") && current.durationSecs == 0)
                 current.durationSecs = parseDuration(value);
+            else if (episode && contentNs && name == QStringLiteral("encoded"))
+                preferDescription(current, value);
+            else if (episode && name == QStringLiteral("description"))
+                preferDescription(current, value);
+            else if (episode && name == QStringLiteral("summary")
+                     && (itunesEnd || !contentNs))
+                preferDescription(current, value);
+            else if (episode && name == QStringLiteral("content")
+                     && reader.prefix() != QStringLiteral("media")
+                     && !reader.namespaceUri().toString().contains(QStringLiteral("mrss")))
+                preferDescription(current, value);
+            else if (episode && name == QStringLiteral("url") && stack.contains(QStringLiteral("image")))
+                considerImage(current, value, base);
             else if (!episode && name == QStringLiteral("title") && show.title.isEmpty())
                 show.title = value;
             else if (!episode && name == QStringLiteral("author") && show.author.isEmpty())

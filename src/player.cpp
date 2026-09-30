@@ -4,6 +4,7 @@
 
 #include <QAudioOutput>
 #include <QCoreApplication>
+#include <QFileInfo>
 #include <QDBusAbstractAdaptor>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
@@ -142,8 +143,7 @@ public:
 
     QString playbackStatus() const;
     double rate() const { return m_rate; }
-    double volume() const { return m_audio->volume(); }
-    void setVolume(double value) { m_audio->setVolume(static_cast<float>(value)); }
+    double volume() const { return m_volume; }
     qint64 positionMs() const { return m_positionMs; }
     bool canGoNext() const { return m_library.adjacent(m_episode.id, true, false) != 0; }
     bool canGoPrevious() const { return m_library.adjacent(m_episode.id, false, false) != 0; }
@@ -160,6 +160,8 @@ public slots:
     Q_SCRIPTABLE void Stop();
     Q_SCRIPTABLE void SeekTo(double seconds);
     Q_SCRIPTABLE void SetRate(double value);
+    Q_SCRIPTABLE void SetVolume(double value);
+    Q_SCRIPTABLE void RefreshArt();
     Q_SCRIPTABLE QVariantMap State();
 
 signals:
@@ -182,6 +184,7 @@ private:
     EpisodeRow m_episode;
     QString m_showTitle;
     QString m_art;
+    QString m_description;
     QString m_error;
     qint64 m_positionMs = 0;
     qint64 m_durationMs = 0;
@@ -189,6 +192,7 @@ private:
     bool m_resumePending = false;
     bool m_marked = false;
     double m_rate = 1;
+    double m_volume = 1;
     qint64 m_lastSavedMs = 0;
 };
 
@@ -214,7 +218,7 @@ QString MprisPlayerAdaptor::playbackStatus() const { return m_player->playbackSt
 double MprisPlayerAdaptor::rate() const { return m_player->rate(); }
 void MprisPlayerAdaptor::setRate(double value) { m_player->SetRate(value); }
 double MprisPlayerAdaptor::volume() const { return m_player->volume(); }
-void MprisPlayerAdaptor::setVolume(double value) { m_player->setVolume(value); }
+void MprisPlayerAdaptor::setVolume(double value) { m_player->SetVolume(value); }
 qlonglong MprisPlayerAdaptor::position() const { return m_player->positionMs() * 1000; }
 bool MprisPlayerAdaptor::canGoNext() const { return m_player->canGoNext(); }
 bool MprisPlayerAdaptor::canGoPrevious() const { return m_player->canGoPrevious(); }
@@ -261,6 +265,8 @@ PlayerService::PlayerService(Library &library, QObject *parent)
     m_audio = new QAudioOutput(this);
     m_player->setAudioOutput(m_audio);
     m_rate = m_library.rate();
+    m_volume = m_library.volume();
+    m_audio->setVolume(static_cast<float>(m_volume));
 
     connect(m_player, &QMediaPlayer::positionChanged, this, [this](qint64 position) {
         m_positionMs = position;
@@ -365,10 +371,26 @@ QVariantMap PlayerService::State()
     state.insert(QStringLiteral("position"), m_positionMs / 1000.0);
     state.insert(QStringLiteral("duration"), m_durationMs / 1000.0);
     state.insert(QStringLiteral("rate"), m_rate);
+    state.insert(QStringLiteral("volume"), m_volume);
     state.insert(QStringLiteral("status"), status);
     state.insert(QStringLiteral("played"), m_episode.played);
     state.insert(QStringLiteral("error"), m_error);
+    state.insert(QStringLiteral("description"), m_description);
     return state;
+}
+
+
+QString artForEpisode(Library &library, const EpisodeRow &episode)
+{
+    // Prefer episode art (local cache, then remote URL) over the show cover.
+    if (!episode.imagePath.isEmpty() && QFileInfo::exists(episode.imagePath))
+        return QUrl::fromLocalFile(episode.imagePath).toString();
+    if (!episode.imageUrl.isEmpty())
+        return episode.imageUrl;
+    const QString showImage = library.showImage(episode.showId);
+    if (showImage.isEmpty() || !QFileInfo::exists(showImage))
+        return {};
+    return QUrl::fromLocalFile(showImage).toString();
 }
 
 void PlayerService::Load(qlonglong episodeId)
@@ -386,8 +408,8 @@ void PlayerService::Load(qlonglong episodeId)
     m_error.clear();
     m_episode = episode;
     m_showTitle = m_library.showTitle(episode.showId);
-    const QString image = m_library.showImage(episode.showId);
-    m_art = image.isEmpty() ? QString() : QUrl::fromLocalFile(image).toString();
+    m_description = episode.description;
+    m_art = artForEpisode(m_library, episode);
     m_marked = episode.played;
     int resume = episode.positionMs;
     const int knownDuration = episode.durationSecs * 1000;
@@ -439,6 +461,7 @@ void PlayerService::Stop()
     m_episode = {};
     m_showTitle.clear();
     m_art.clear();
+    m_description.clear();
     m_positionMs = 0;
     m_durationMs = 0;
     m_resumePending = false;
@@ -467,6 +490,35 @@ void PlayerService::SetRate(double value)
     m_player->setPlaybackRate(value);
     publish();
 }
+
+void PlayerService::SetVolume(double value)
+{
+    // QAudioOutput clamps to [0, 1]; soft gain above 100% is not available.
+    const double clamped = qBound(0.0, value, 1.0);
+    if (qAbs(clamped - m_volume) < 0.0005 && qAbs(clamped - m_audio->volume()) < 0.0005)
+        return;
+    m_volume = clamped;
+    m_library.setVolume(clamped);
+    m_audio->setVolume(static_cast<float>(clamped));
+    publish();
+}
+
+void PlayerService::RefreshArt()
+{
+    if (m_episode.id == 0)
+        return;
+    const EpisodeRow episode = m_library.episode(m_episode.id);
+    if (episode.id == 0)
+        return;
+    m_episode.imageUrl = episode.imageUrl;
+    m_episode.imagePath = episode.imagePath;
+    const QString next = artForEpisode(m_library, episode);
+    if (next == m_art)
+        return;
+    m_art = next;
+    publish();
+}
+
 
 void PlayerService::savePosition()
 {

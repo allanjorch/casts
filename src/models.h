@@ -34,11 +34,13 @@ public:
         EpisodeIdRole = Qt::UserRole + 1,
         ShowIdRole,
         TitleRole,
+        DescriptionRole,
         PublishedRole,
         DurationRole,
         PlayedRole,
         PositionRole,
         AudioRole,
+        CoverRole,
     };
 
     explicit EpisodeModel(QObject *parent = nullptr);
