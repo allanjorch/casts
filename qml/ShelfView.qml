@@ -146,6 +146,13 @@ Item {
                 }
             }
             IconButton {
+                icon.name: backend.shelfShowAll ? "view-reveal-symbolic" : "view-conceal-symbolic"
+                tip: backend.busy ? "Refreshing…"
+                     : (backend.shelfShowAll ? "Show unplayed only" : "Show all")
+                enabled: !backend.busy
+                onClicked: backend.setShelfShowAll(!backend.shelfShowAll)
+            }
+            IconButton {
                 icon.name: backend.shelfView === "list" ? "view-list-symbolic" : "view-grid-symbolic"
                 tip: backend.busy ? "Refreshing…"
                      : (backend.shelfView === "list" ? "Show as gallery" : "Show as list")
@@ -172,7 +179,9 @@ Item {
         color: theme.dim
         font.pixelSize: theme.body
         font.weight: Font.Normal
-        text: "Add a feed to start. An OPML export from Podcast Addict brings the shows with it."
+        text: backend.shelfShowAll
+              ? "Add a feed to start. An OPML export from Podcast Addict brings the shows with it."
+              : "No shows with unplayed episodes."
     }
 
     GridView {

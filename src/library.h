@@ -92,6 +92,10 @@ public:
     void setShelfListSize(int size);
     int episodeListSize() const;
     void setEpisodeListSize(int size);
+    bool shelfShowAll() const;
+    void setShelfShowAll(bool showAll);
+    bool episodeShowAll() const;
+    void setEpisodeShowAll(bool showAll);
 
     QStringList feedUrls() const;
 

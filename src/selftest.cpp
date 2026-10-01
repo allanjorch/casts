@@ -231,6 +231,16 @@ int runSelfTest(int argc, char **argv)
         check(library.episodeListSize() == 0, "episode list cover stays at least the smallest");
         library.setEpisodeListSize(9);
         check(library.episodeListSize() == 4, "episode list cover stays at most the largest");
+        check(library.shelfShowAll(), "shelf eye starts open");
+        check(library.episodeShowAll(), "episode eye starts open");
+        library.setShelfShowAll(false);
+        library.setEpisodeShowAll(false);
+        check(!library.shelfShowAll(), "shelf eye closes");
+        check(!library.episodeShowAll(), "episode eye closes");
+        library.setShelfShowAll(true);
+        library.setEpisodeShowAll(true);
+        check(library.shelfShowAll(), "shelf eye reopens");
+        check(library.episodeShowAll(), "episode eye reopens");
     }
 
     if (g_fails == 0) {

@@ -112,6 +112,11 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 4
             IconButton {
+                icon.name: backend.episodeShowAll ? "view-reveal-symbolic" : "view-conceal-symbolic"
+                tip: backend.episodeShowAll ? "Show unplayed only" : "Show all"
+                onClicked: backend.setEpisodeShowAll(!backend.episodeShowAll)
+            }
+            IconButton {
                 icon.name: "check-plain-symbolic"
                 tip: "Mark all as played"
                 onClicked: page.markAllRequested()

@@ -93,9 +93,37 @@ void Backend::setBusy(bool busy)
     emit busyChanged();
 }
 
+QList<ShowRow> Backend::visibleShows() const
+{
+    const auto rows = m_library.shows();
+    if (m_library.shelfShowAll())
+        return rows;
+    QList<ShowRow> filtered;
+    filtered.reserve(rows.size());
+    for (const auto &row : rows) {
+        if (row.unheard > 0)
+            filtered.append(row);
+    }
+    return filtered;
+}
+
+QList<EpisodeRow> Backend::visibleEpisodes(qint64 showId) const
+{
+    const auto rows = m_library.episodes(showId);
+    if (m_library.episodeShowAll())
+        return rows;
+    QList<EpisodeRow> filtered;
+    filtered.reserve(rows.size());
+    for (const auto &row : rows) {
+        if (!row.played)
+            filtered.append(row);
+    }
+    return filtered;
+}
+
 void Backend::reloadShows()
 {
-    m_shows.setRows(m_library.shows());
+    m_shows.setRows(visibleShows());
     if (m_openShowId != 0) {
         bool found = false;
         const auto rows = m_library.shows();
@@ -133,7 +161,7 @@ void Backend::reloadEpisodes()
 {
     if (m_openShowId == 0)
         return;
-    m_episodes.setRows(m_library.episodes(m_openShowId));
+    m_episodes.setRows(visibleEpisodes(m_openShowId));
     reloadShows();
     refreshOpenEpisode();
 }
@@ -189,7 +217,7 @@ void Backend::openShow(qint64 showId)
 {
     const bool episodeOpen = m_openEpisodeId != 0;
     m_openShowId = showId;
-    m_episodes.setRows(m_library.episodes(showId));
+    m_episodes.setRows(visibleEpisodes(showId));
     m_openShowTitle = m_library.showTitle(showId);
     m_openShowCover = showCoverUrl(m_library, showId);
     m_openShowUnheard = 0;
@@ -248,7 +276,7 @@ void Backend::openEpisode(qint64 episodeId)
     if (m_openShowId == 0 || m_openShowId != row.showId) {
         // openShow clears any prior episode; set this one after.
         m_openShowId = row.showId;
-        m_episodes.setRows(m_library.episodes(row.showId));
+        m_episodes.setRows(visibleEpisodes(row.showId));
         m_openShowTitle = m_library.showTitle(row.showId);
         m_openShowCover = showCoverUrl(m_library, row.showId);
         m_openShowUnheard = 0;
@@ -736,6 +764,35 @@ void Backend::setEpisodeListSize(int size)
         return;
     m_library.setEpisodeListSize(next);
     emit shelfLayoutChanged();
+}
+
+bool Backend::shelfShowAll() const
+{
+    return m_library.shelfShowAll();
+}
+
+bool Backend::episodeShowAll() const
+{
+    return m_library.episodeShowAll();
+}
+
+void Backend::setShelfShowAll(bool showAll)
+{
+    if (showAll == m_library.shelfShowAll())
+        return;
+    m_library.setShelfShowAll(showAll);
+    reloadShows();
+    emit filterChanged();
+}
+
+void Backend::setEpisodeShowAll(bool showAll)
+{
+    if (showAll == m_library.episodeShowAll())
+        return;
+    m_library.setEpisodeShowAll(showAll);
+    if (m_openShowId != 0)
+        m_episodes.setRows(visibleEpisodes(m_openShowId));
+    emit filterChanged();
 }
 
 void Backend::markPlayed(qint64 episodeId, bool played)

@@ -51,6 +51,8 @@ class Backend : public QObject {
     Q_PROPERTY(int shelfColumns READ shelfColumns NOTIFY shelfLayoutChanged)
     Q_PROPERTY(int shelfListSize READ shelfListSize NOTIFY shelfLayoutChanged)
     Q_PROPERTY(int episodeListSize READ episodeListSize NOTIFY shelfLayoutChanged)
+    Q_PROPERTY(bool shelfShowAll READ shelfShowAll NOTIFY filterChanged)
+    Q_PROPERTY(bool episodeShowAll READ episodeShowAll NOTIFY filterChanged)
 
 public:
     explicit Backend(Library &library, QObject *parent = nullptr);
@@ -89,6 +91,8 @@ public:
     int shelfColumns() const;
     int shelfListSize() const;
     int episodeListSize() const;
+    bool shelfShowAll() const;
+    bool episodeShowAll() const;
 
     Q_INVOKABLE void addFeed(const QString &url);
     Q_INVOKABLE void importOpml(const QString &fileUrl);
@@ -111,6 +115,8 @@ public:
     Q_INVOKABLE void setShelfColumns(int columns);
     Q_INVOKABLE void setShelfListSize(int size);
     Q_INVOKABLE void setEpisodeListSize(int size);
+    Q_INVOKABLE void setShelfShowAll(bool showAll);
+    Q_INVOKABLE void setEpisodeShowAll(bool showAll);
     Q_INVOKABLE void markPlayed(qint64 episodeId, bool played);
     Q_INVOKABLE void markAllPlayed(qint64 showId);
     Q_INVOKABLE void markOlderPlayed(qint64 episodeId);
@@ -128,6 +134,7 @@ signals:
     void playerStateChanged();
     void playerPositionChanged();
     void shelfLayoutChanged();
+    void filterChanged();
     void raised();
 
 private:
@@ -139,6 +146,8 @@ private:
     void setBusy(bool busy);
     void reloadShows();
     void reloadEpisodes();
+    QList<ShowRow> visibleShows() const;
+    QList<EpisodeRow> visibleEpisodes(qint64 showId) const;
     void enqueue(const QStringList &urls);
     void fetchNext();
     void downloadCover(qint64 showId, const QString &imageUrl);

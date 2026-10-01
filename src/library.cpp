@@ -581,6 +581,26 @@ void Library::setEpisodeListSize(int size)
     setSetting(QStringLiteral("show.listSize"), QString::number(qBound(0, size, 4)));
 }
 
+bool Library::shelfShowAll() const
+{
+    return setting(QStringLiteral("shelf.showAll"), QStringLiteral("1")) != QStringLiteral("0");
+}
+
+void Library::setShelfShowAll(bool showAll)
+{
+    setSetting(QStringLiteral("shelf.showAll"), showAll ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
+bool Library::episodeShowAll() const
+{
+    return setting(QStringLiteral("show.showAll"), QStringLiteral("1")) != QStringLiteral("0");
+}
+
+void Library::setEpisodeShowAll(bool showAll)
+{
+    setSetting(QStringLiteral("show.showAll"), showAll ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
 QStringList Library::feedUrls() const
 {
     QStringList urls;
