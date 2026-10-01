@@ -16,7 +16,7 @@ Work **one item at a time**. Do not start the next until the current one is done
 
 10. [ ] **Later discussion (do not implement yet)** — Consider order of top-right header actions on Main and Episodes for better UX (discuss/rearrange).
 
-11. [ ] **Last-refresh indicator / skip auto-refresh** — Indicate when last update/refresh ran; if within ~30 minutes of last refresh, skip automatic refresh on launch (manual refresh still allowed).
+11. [x] **Last-refresh indicator / skip auto-refresh** — Indicate when last update/refresh ran; if within ~30 minutes of last refresh, skip automatic refresh on launch (manual refresh still allowed).
 
 
 12. [ ] Compact chrome — tiny window → only controls + progress.

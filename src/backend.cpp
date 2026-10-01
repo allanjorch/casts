@@ -7,6 +7,7 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDBusServiceWatcher>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -24,6 +25,8 @@ const QString kPlayerPath = QStringLiteral("/com/github/allanjorch/podcast");
 const QString kPlayerIface = QStringLiteral("com.github.allanjorch.podcast.Player");
 
 const QList<double> kRates = {1.0, 1.2, 1.5, 1.8, 2.0, 0.8};
+const QString kLastRefreshKey = QStringLiteral("refresh/lastSuccessMs");
+constexpr qint64 kAutoRefreshSkipMs = 30 * 60 * 1000; // skip launch refresh if last success within this window
 
 QString coverExtension(const QByteArray &bytes, const QString &contentType)
 {
@@ -73,7 +76,7 @@ Backend::Backend(Library &library, QObject *parent)
     timer->start(500);
     QTimer::singleShot(0, this, [this]() {
         restoreLastPlayed();
-        refreshAll();
+        maybeAutoRefreshOnLaunch();
     });
 }
 
@@ -197,6 +200,7 @@ void Backend::refreshAll()
     if (urls.isEmpty())
         return;
     m_shelfRefresh = true;
+    m_shelfRefreshHadError = false;
     enqueue(urls);
 }
 
@@ -389,6 +393,7 @@ void Backend::fetchNext()
     if (m_queue.isEmpty()) {
         setBusy(false);
         m_shelfRefresh = false;
+        m_shelfRefreshHadError = false;
         return;
     }
     const Job job = m_queue.takeFirst();
@@ -407,6 +412,8 @@ void Backend::fetchNext()
         reply->deleteLater();
         m_active = nullptr;
         if (reply->error() != QNetworkReply::NoError) {
+            if (m_shelfRefresh)
+                m_shelfRefreshHadError = true;
             setStatus(reply->errorString());
             fetchNext();
             return;
@@ -414,12 +421,16 @@ void Backend::fetchNext()
         QString error;
         const auto parsed = parseFeed(reply->readAll(), reply->url(), &error);
         if (!parsed) {
+            if (m_shelfRefresh)
+                m_shelfRefreshHadError = true;
             setStatus(error.isEmpty() ? QStringLiteral("Could not read that feed.") : error);
             fetchNext();
             return;
         }
         const qint64 showId = m_library.upsertShow(job.url, *parsed);
         if (showId == 0) {
+            if (m_shelfRefresh)
+                m_shelfRefreshHadError = true;
             setStatus(QStringLiteral("Could not save that show."));
             fetchNext();
             return;
@@ -431,8 +442,15 @@ void Backend::fetchNext()
             openShow(showId);
         const QString title = parsed->title;
         if (m_queue.isEmpty()) {
-            setStatus(m_shelfRefresh ? QStringLiteral("All podcasts updated.")
-                                     : QStringLiteral("Updated %1.").arg(title));
+            if (m_shelfRefresh) {
+                if (!m_shelfRefreshHadError)
+                    noteSuccessfulShelfRefresh();
+                setStatus(m_shelfRefreshHadError
+                              ? QStringLiteral("Refresh finished with errors.")
+                              : QStringLiteral("All podcasts updated."));
+            } else {
+                setStatus(QStringLiteral("Updated %1.").arg(title));
+            }
         }
         fetchNext();
     });
@@ -943,6 +961,52 @@ void Backend::applyPlayerState(const QVariantMap &state)
         reloadEpisodes();
         reloadShows();
     }
+}
+
+void Backend::maybeAutoRefreshOnLaunch()
+{
+    QSettings settings;
+    const qint64 lastMs = settings.value(kLastRefreshKey, 0).toLongLong();
+    if (lastMs > 0) {
+        const qint64 age = QDateTime::currentMSecsSinceEpoch() - lastMs;
+        if (age >= 0 && age < kAutoRefreshSkipMs)
+            return;
+    }
+    refreshAll();
+}
+
+void Backend::noteSuccessfulShelfRefresh()
+{
+    QSettings settings;
+    settings.setValue(kLastRefreshKey, QDateTime::currentMSecsSinceEpoch());
+    emit lastRefreshChanged();
+}
+
+QString Backend::lastRefreshLabel() const
+{
+    QSettings settings;
+    const qint64 lastMs = settings.value(kLastRefreshKey, 0).toLongLong();
+    if (lastMs <= 0)
+        return {};
+    const qint64 ageMs = QDateTime::currentMSecsSinceEpoch() - lastMs;
+    if (ageMs < 0)
+        return {};
+    const qint64 mins = ageMs / 60000;
+    if (mins < 1)
+        return QStringLiteral("just now");
+    if (mins == 1)
+        return QStringLiteral("1 min ago");
+    if (mins < 60)
+        return QStringLiteral("%1 min ago").arg(mins);
+    const qint64 hours = mins / 60;
+    if (hours == 1)
+        return QStringLiteral("1 hour ago");
+    if (hours < 48)
+        return QStringLiteral("%1 hours ago").arg(hours);
+    const qint64 days = hours / 24;
+    if (days == 1)
+        return QStringLiteral("1 day ago");
+    return QStringLiteral("%1 days ago").arg(days);
 }
 
 QVariantMap Backend::windowGeometry() const

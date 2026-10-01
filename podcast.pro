@@ -13,6 +13,7 @@ SOURCES += \
     src/models.cpp \
     src/backend.cpp \
     src/player.cpp \
+    src/growingmediadevice.cpp \
     src/selftest.cpp
 
 HEADERS += \
@@ -21,7 +22,8 @@ HEADERS += \
     src/theme.h \
     src/models.h \
     src/backend.h \
-    src/player.h
+    src/player.h \
+    src/growingmediadevice.h
 
 RESOURCES += resources.qrc
 

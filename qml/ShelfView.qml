@@ -118,7 +118,10 @@ Item {
             IconButton {
                 id: refreshButton
                 icon.name: "view-refresh-symbolic"
-                tip: backend.busy ? "Refreshing…" : "Refresh"
+                tip: backend.busy ? "Refreshing…"
+                     : (backend.lastRefreshLabel.length
+                        ? ("Refresh — " + backend.lastRefreshLabel)
+                        : "Refresh")
                 enabled: !backend.busy
                 onClicked: backend.refreshAll()
 

@@ -21,6 +21,7 @@ class Backend : public QObject {
     Q_PROPERTY(EpisodeModel *episodes READ episodes CONSTANT)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
+    Q_PROPERTY(QString lastRefreshLabel READ lastRefreshLabel NOTIFY lastRefreshChanged)
     Q_PROPERTY(qint64 openShowId READ openShowId NOTIFY openShowChanged)
     Q_PROPERTY(QString openShowTitle READ openShowTitle NOTIFY openShowChanged)
     Q_PROPERTY(QString openShowCover READ openShowCover NOTIFY openShowChanged)
@@ -61,6 +62,7 @@ public:
     EpisodeModel *episodes() { return &m_episodes; }
     QString status() const { return m_status; }
     bool busy() const { return m_busy; }
+    QString lastRefreshLabel() const;
     qint64 openShowId() const { return m_openShowId; }
     QString openShowTitle() const { return m_openShowTitle; }
     QString openShowCover() const { return m_openShowCover; }
@@ -129,6 +131,7 @@ public:
 signals:
     void statusChanged();
     void busyChanged();
+    void lastRefreshChanged();
     void openShowChanged();
     void openEpisodeChanged();
     void playerStateChanged();
@@ -144,6 +147,8 @@ private:
 
     void setStatus(const QString &status);
     void setBusy(bool busy);
+    void maybeAutoRefreshOnLaunch();
+    void noteSuccessfulShelfRefresh();
     void reloadShows();
     void reloadEpisodes();
     QList<ShowRow> visibleShows() const;
@@ -177,6 +182,7 @@ private:
     QList<Job> m_queue;
     QPointer<QNetworkReply> m_active;
     bool m_shelfRefresh = false;
+    bool m_shelfRefreshHadError = false;
     QString m_status;
     bool m_busy = false;
     qint64 m_openShowId = 0;
