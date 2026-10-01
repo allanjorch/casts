@@ -82,6 +82,8 @@ public:
     void setRate(double rate);
     double volume() const;
     void setVolume(double volume);
+    qint64 lastPlayedEpisodeId() const;
+    void setLastPlayedEpisodeId(qint64 episodeId);
     QString shelfView() const;
     void setShelfView(const QString &view);
     int shelfColumns() const;

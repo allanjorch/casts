@@ -12,21 +12,56 @@
 #include <QDBusObjectPath>
 #include <QGuiApplication>
 #include <QMediaPlayer>
+#include <QPlaybackOptions>
 #include <QProcess>
 #include <QDBusMessage>
+#include <QDBusVariant>
+#include <QElapsedTimer>
 #include <QTimer>
 #include <QUrl>
 #include <QVariantMap>
+
+#include <chrono>
 
 namespace {
 const QString kUiService = QStringLiteral("com.github.allanjorch.podcast");
 const QString kPlayerService = QStringLiteral("com.github.allanjorch.podcast.Player");
 const QString kMprisService = QStringLiteral("org.mpris.MediaPlayer2.podcast");
+constexpr int kMaxErrorRecoveries = 3;
 
 bool uiIsOpen()
 {
     auto *bus = QDBusConnection::sessionBus().interface();
     return bus && bus->isServiceRegistered(kUiService);
+}
+
+bool isRecoverablePlaybackError(QMediaPlayer::Error error, const QString &message)
+{
+    if (error == QMediaPlayer::NetworkError || error == QMediaPlayer::ResourceError)
+        return true;
+    const QString lower = message.toLower();
+    // Qt FFmpeg demuxer: "Demuxing failed" on dead HTTP sessions after sleep/blips.
+    return lower.contains(QStringLiteral("demux"))
+        || lower.contains(QStringLiteral("network"))
+        || lower.contains(QStringLiteral("connection"))
+        || lower.contains(QStringLiteral("timed out"))
+        || lower.contains(QStringLiteral("timeout"))
+        || lower.contains(QStringLiteral("server returned"))
+        || lower.contains(QStringLiteral("input/output"))
+        || lower.contains(QStringLiteral("i/o error"));
+}
+
+QString friendlyPlaybackError(QMediaPlayer::Error error, const QString &message, bool giveUp)
+{
+    if (isRecoverablePlaybackError(error, message)) {
+        return giveUp ? QStringLiteral("Stream interrupted. Tap play to retry.")
+                      : QStringLiteral("Stream interrupted. Reconnecting…");
+    }
+    if (error == QMediaPlayer::FormatError)
+        return QStringLiteral("This episode’s audio format isn’t supported.");
+    if (message.isEmpty())
+        return QStringLiteral("Playback failed.");
+    return message;
 }
 }
 
@@ -154,6 +189,7 @@ public:
 
 public slots:
     Q_SCRIPTABLE void Load(qlonglong episodeId);
+    Q_SCRIPTABLE void LoadPaused(qlonglong episodeId);
     Q_SCRIPTABLE void Play();
     Q_SCRIPTABLE void Pause();
     Q_SCRIPTABLE void PlayPause();
@@ -168,12 +204,23 @@ signals:
     Q_SCRIPTABLE void StateChanged(QVariantMap state);
 
 private:
+    void loadEpisode(qlonglong episodeId, bool autoPlay);
     void savePosition();
     void publish();
     void noteSeek(qint64 positionMs);
+    void tryResumeSeek(bool forceReposition = false);
+    void armResumeWatch();
+    void clearResumeWatch();
+    void rebuildAudioOutput();
+    void recoverAfterSleep(bool resumePlay);
+    void armStallWatch();
+    void checkStall();
 
 public:
     void considerExit();
+
+public slots:
+    void handlePrepareForSleep(bool sleeping);
 
 private:
 
@@ -189,11 +236,24 @@ private:
     qint64 m_positionMs = 0;
     qint64 m_durationMs = 0;
     int m_resumeMs = 0;
+    int m_resumeGuardMs = 0; // last intended resume; re-arm if a "landed" seek bounces to 0
     bool m_resumePending = false;
+    QElapsedTimer m_resumeSince;
+    QElapsedTimer m_resumeConfirmSince;
+    QElapsedTimer m_resumeGuardingSince;
+    QTimer *m_resumeTimer = nullptr;
+    int m_resumeForceTick = 0;
+    bool m_inResumeSeek = false;
     bool m_marked = false;
     double m_rate = 1;
     double m_volume = 1;
     qint64 m_lastSavedMs = 0;
+    bool m_playAfterSleep = false;
+    bool m_recovering = false;
+    int m_errorRecoveries = 0;
+    qint64 m_stallAnchorMs = -1;
+    QElapsedTimer m_stallSince;
+    QTimer *m_stallTimer = nullptr;
 };
 
 void MprisRootAdaptor::Raise()
@@ -267,9 +327,112 @@ PlayerService::PlayerService(Library &library, QObject *parent)
     m_rate = m_library.rate();
     m_volume = m_library.volume();
     m_audio->setVolume(static_cast<float>(m_volume));
+    {
+        // Long podcast HTTP streams (e.g. Megaphone) need a generous read timeout;
+        // default is short enough that a brief stall becomes "Demuxing failed".
+        QPlaybackOptions opts = m_player->playbackOptions();
+        opts.setNetworkTimeout(std::chrono::milliseconds(60000));
+        opts.setPlaybackIntent(QPlaybackOptions::PlaybackIntent::Playback);
+        m_player->setPlaybackOptions(opts);
+    }
+
+    // After suspend/resume, Qt Multimedia + PipeWire often leave a "Playing"
+    // stream that is corked and never advances. Rebuild on wake; watch for stalls.
+    QDBusConnection::systemBus().connect(
+        QStringLiteral("org.freedesktop.login1"),
+        QStringLiteral("/org/freedesktop/login1"),
+        QStringLiteral("org.freedesktop.login1.Manager"),
+        QStringLiteral("PrepareForSleep"),
+        this,
+        SLOT(handlePrepareForSleep(bool)));
+    m_stallTimer = new QTimer(this);
+    m_stallTimer->setInterval(1000);
+    connect(m_stallTimer, &QTimer::timeout, this, [this]() { checkStall(); });
+    m_resumeTimer = new QTimer(this);
+    m_resumeTimer->setInterval(500);
+    connect(m_resumeTimer, &QTimer::timeout, this, [this]() {
+        if (!m_resumePending || m_resumeMs <= 0) {
+            clearResumeWatch();
+            return;
+        }
+        tryResumeSeek(false);
+        if (m_resumeSince.isValid() && m_resumeSince.elapsed() >= 20000) {
+            m_library.setPosition(m_episode.id, m_resumeMs);
+            m_lastSavedMs = m_resumeMs;
+            m_positionMs = m_resumeMs;
+            clearResumeWatch();
+            publish();
+        }
+    });
 
     connect(m_player, &QMediaPlayer::positionChanged, this, [this](qint64 position) {
-        m_positionMs = position;
+        // While a resume seek is pending, Qt often reports ~0 (or a one-shot optimistic
+        // target) before the seek sticks. Ignore low readings, and only clear pending
+        // after the position stays near the target — a single near-target pulse is not enough.
+        const qint64 slop = 2500;
+        if (m_resumePending && m_resumeMs > 0) {
+            if (qAbs(position - m_resumeMs) <= slop) {
+                if (!m_resumeConfirmSince.isValid())
+                    m_resumeConfirmSince.restart();
+                else if (m_resumeConfirmSince.elapsed() >= 1000) {
+                    // Require a full second near the target; then keep a bounce guard.
+                    m_resumeGuardMs = m_resumeMs;
+                    m_resumeGuardingSince.restart();
+                    clearResumeWatch();
+                }
+                m_positionMs = position;
+            } else {
+                m_resumeConfirmSince.invalidate();
+                if (position + slop < m_resumeMs) {
+                    m_positionMs = m_resumeMs;
+                    if (!m_resumeSince.isValid() || m_resumeSince.elapsed() < 30000)
+                        return;
+                    m_library.setPosition(m_episode.id, m_resumeMs);
+                    m_lastSavedMs = m_resumeMs;
+                    m_resumeGuardMs = m_resumeMs;
+                    m_resumeGuardingSince.restart();
+                    clearResumeWatch();
+                } else {
+                    m_resumeGuardMs = 0;
+                    m_resumeGuardingSince.invalidate();
+                    clearResumeWatch();
+                    m_positionMs = position;
+                }
+            }
+            if (m_resumePending) {
+                if (qAbs(m_positionMs - m_lastSavedMs) >= 5000)
+                    savePosition();
+                return;
+            }
+        } else if (m_resumeGuardMs > 5000
+                   && m_resumeGuardingSince.isValid()
+                   && m_resumeGuardingSince.elapsed() < 8000
+                   && position + 10000 < m_resumeGuardMs
+                   && position < 60000) {
+            // Seek looked landed then bounced back near the start — try again.
+            m_resumeMs = m_resumeGuardMs;
+            m_resumePending = true;
+            m_positionMs = m_resumeGuardMs;
+            m_lastSavedMs = m_resumeGuardMs;
+            armResumeWatch();
+            return;
+        } else {
+            if (m_resumeGuardingSince.isValid() && m_resumeGuardingSince.elapsed() >= 8000) {
+                m_resumeGuardMs = 0;
+                m_resumeGuardingSince.invalidate();
+            }
+            m_positionMs = position;
+        }
+        if (m_player->playbackState() == QMediaPlayer::PlayingState
+            && !m_resumePending && !m_recovering) {
+            m_stallAnchorMs = position;
+            m_stallSince.restart();
+            if (!m_error.isEmpty()) {
+                m_error.clear();
+                m_errorRecoveries = 0;
+                publish();
+            }
+        }
         if (!m_marked && m_episode.id != 0 && m_durationMs >= 15000
             && position >= m_durationMs * 95 / 100) {
             m_library.markPlayed(m_episode.id, true);
@@ -283,22 +446,18 @@ PlayerService::PlayerService(Library &library, QObject *parent)
     connect(m_player, &QMediaPlayer::durationChanged, this, [this](qint64 duration) {
         if (duration > 0)
             m_durationMs = duration;
-        if (m_resumePending && m_resumeMs > 0 && duration > 0) {
-            m_player->setPosition(qMin<qint64>(m_resumeMs, duration));
-            m_resumePending = false;
-            noteSeek(m_player->position());
-        }
+        tryResumeSeek(false);
         m_player->setPlaybackRate(m_rate);
         publish();
     });
-    connect(m_player, &QMediaPlayer::playbackStateChanged, this, [this]() { publish(); });
+    connect(m_player, &QMediaPlayer::playbackStateChanged, this, [this]() {
+        armStallWatch();
+        publish();
+    });
     connect(m_player, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
-        if (m_resumePending && m_resumeMs > 0
-            && (status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::BufferedMedia)) {
-            m_player->setPosition(m_resumeMs);
-            m_player->setPlaybackRate(m_rate);
-            m_resumePending = false;
-            noteSeek(m_resumeMs);
+        if (status == QMediaPlayer::BufferedMedia
+            || status == QMediaPlayer::LoadedMedia) {
+            tryResumeSeek(false);
         }
         if (status != QMediaPlayer::EndOfMedia || m_episode.id == 0)
             return;
@@ -313,8 +472,26 @@ PlayerService::PlayerService(Library &library, QObject *parent)
                 Stop();
         });
     });
-    connect(m_player, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error, const QString &message) {
-        m_error = message.isEmpty() ? QStringLiteral("Playback failed.") : message;
+    connect(m_player, &QMediaPlayer::errorOccurred, this,
+            [this](QMediaPlayer::Error error, const QString &message) {
+        if (m_episode.id == 0)
+            return;
+        const bool recoverable = isRecoverablePlaybackError(error, message);
+        if (recoverable && m_errorRecoveries < kMaxErrorRecoveries) {
+            ++m_errorRecoveries;
+            m_error = friendlyPlaybackError(error, message, false);
+            publish();
+            // Back off so CDN/session and PipeWire can settle (sleep/network blips).
+            const int delayMs = 600 + (m_errorRecoveries - 1) * 1200;
+            const int attempt = m_errorRecoveries;
+            QTimer::singleShot(delayMs, this, [this, attempt]() {
+                if (m_episode.id == 0 || attempt != m_errorRecoveries)
+                    return;
+                recoverAfterSleep(true);
+            });
+            return;
+        }
+        m_error = friendlyPlaybackError(error, message, true);
         publish();
         if (!uiIsOpen())
             QTimer::singleShot(1200, this, [this]() { Stop(); });
@@ -358,9 +535,11 @@ QVariantMap PlayerService::State()
     QVariantMap state;
     QString status = QStringLiteral("stopped");
     if (m_episode.id != 0) {
+        // Loaded episode is either playing or paused (never "stopped") so the
+        // PlayerBar stays visible with a ready-to-play affordance after restore.
         if (m_player->playbackState() == QMediaPlayer::PlayingState)
             status = QStringLiteral("playing");
-        else if (m_player->playbackState() == QMediaPlayer::PausedState)
+        else
             status = QStringLiteral("paused");
     }
     state.insert(QStringLiteral("episodeId"), m_episode.id);
@@ -395,9 +574,42 @@ QString artForEpisode(Library &library, const EpisodeRow &episode)
 
 void PlayerService::Load(qlonglong episodeId)
 {
+    loadEpisode(episodeId, true);
+}
+
+void PlayerService::LoadPaused(qlonglong episodeId)
+{
+    loadEpisode(episodeId, false);
+}
+
+void PlayerService::loadEpisode(qlonglong episodeId, bool autoPlay)
+{
     if (m_episode.id == episodeId && episodeId != 0
         && m_player->playbackState() != QMediaPlayer::StoppedState) {
-        m_player->play();
+        // Same episode already loaded: if we are still near the start but the
+        // library has saved progress, resume there instead of playing from 0.
+        const EpisodeRow saved = m_library.episode(episodeId);
+        int resume = saved.positionMs;
+        const int knownDuration = saved.durationSecs * 1000;
+        if (knownDuration > 0 && resume >= knownDuration - 2000)
+            resume = 0;
+        if (saved.played && knownDuration > 0 && resume > knownDuration * 9 / 10)
+            resume = 0;
+        if (resume > 5000 && m_player->position() + 2500 < resume) {
+            m_resumeMs = resume;
+            m_resumeGuardMs = resume;
+            m_resumePending = true;
+            m_positionMs = resume;
+            m_lastSavedMs = resume;
+            armResumeWatch();
+            // Same episode is already buffered — SeekTo-style setPosition works here.
+            tryResumeSeek(false);
+        }
+        m_library.setLastPlayedEpisodeId(episodeId);
+        if (autoPlay)
+            m_player->play();
+        else
+            m_player->pause();
         publish();
         return;
     }
@@ -406,6 +618,7 @@ void PlayerService::Load(qlonglong episodeId)
         return;
     savePosition();
     m_error.clear();
+    m_errorRecoveries = 0;
     m_episode = episode;
     m_showTitle = m_library.showTitle(episode.showId);
     m_description = episode.description;
@@ -418,6 +631,7 @@ void PlayerService::Load(qlonglong episodeId)
     if (episode.played && knownDuration > 0 && resume > knownDuration * 9 / 10)
         resume = 0;
     m_resumeMs = resume;
+    m_resumeGuardMs = resume > 0 ? resume : 0;
     m_resumePending = resume > 0;
     m_positionMs = resume;
     m_durationMs = knownDuration;
@@ -425,7 +639,13 @@ void PlayerService::Load(qlonglong episodeId)
     m_rate = m_library.rate();
     m_player->setPlaybackRate(m_rate);
     m_player->setSource(QUrl(episode.audioUrl));
-    m_player->play();
+    if (m_resumePending)
+        armResumeWatch();
+    m_library.setLastPlayedEpisodeId(episode.id);
+    if (autoPlay)
+        m_player->play();
+    else
+        m_player->pause();
     publish();
 }
 
@@ -433,7 +653,23 @@ void PlayerService::Play()
 {
     if (m_episode.id == 0)
         return;
+    // Dead demux/network pipeline (raw "Demuxing failed" left in the bar) needs a reload.
+    if (!m_error.isEmpty()
+        || m_player->mediaStatus() == QMediaPlayer::InvalidMedia
+        || m_player->error() != QMediaPlayer::NoError) {
+        m_error.clear();
+        recoverAfterSleep(true);
+        return;
+    }
+    // A corked post-sleep pipeline reports Playing but never advances; rebuild first.
+    if (m_player->playbackState() == QMediaPlayer::PlayingState
+        && m_stallSince.isValid() && m_stallSince.elapsed() >= 1500
+        && !m_resumePending) {
+        recoverAfterSleep(true);
+        return;
+    }
     m_player->play();
+    armStallWatch();
     publish();
 }
 
@@ -457,14 +693,20 @@ void PlayerService::PlayPause()
 void PlayerService::Stop()
 {
     savePosition();
-    m_player->stop();
+    m_library.setLastPlayedEpisodeId(0);
+    // Clear episode before stop() so a synchronous positionChanged(0) cannot
+    // autosave over the library row we just wrote.
     m_episode = {};
     m_showTitle.clear();
     m_art.clear();
     m_description.clear();
     m_positionMs = 0;
     m_durationMs = 0;
-    m_resumePending = false;
+    m_resumeMs = 0;
+    m_resumeGuardMs = 0;
+    m_resumeGuardingSince.invalidate();
+    clearResumeWatch();
+    m_player->stop();
     publish();
     considerExit();
 }
@@ -474,6 +716,10 @@ void PlayerService::SeekTo(double seconds)
     if (m_episode.id == 0)
         return;
     const qint64 ms = qMax<qint64>(0, static_cast<qint64>(seconds * 1000));
+    m_resumeMs = 0;
+    m_resumeGuardMs = 0;
+    m_resumeGuardingSince.invalidate();
+    clearResumeWatch();
     m_player->setPosition(ms);
     m_positionMs = ms;
     savePosition();
@@ -520,9 +766,167 @@ void PlayerService::RefreshArt()
 }
 
 
+void PlayerService::rebuildAudioOutput()
+{
+    auto *next = new QAudioOutput(this);
+    next->setVolume(static_cast<float>(m_volume));
+    m_player->setAudioOutput(next);
+    if (m_audio)
+        m_audio->deleteLater();
+    m_audio = next;
+}
+
+void PlayerService::recoverAfterSleep(bool resumePlay)
+{
+    if (m_episode.id == 0 || m_recovering)
+        return;
+    m_recovering = true;
+    const qint64 episodeId = m_episode.id;
+    const qint64 keepMs = m_positionMs > 0 ? m_positionMs
+        : (m_resumeMs > 0 ? static_cast<qint64>(m_resumeMs) : 0);
+    const QUrl url(m_episode.audioUrl);
+    savePosition();
+    // Keep a user-facing reconnect note only when we already had a stream error.
+    if (!m_error.isEmpty())
+        m_error = QStringLiteral("Stream interrupted. Reconnecting…");
+    m_player->stop();
+    rebuildAudioOutput();
+    m_resumeMs = static_cast<int>(keepMs);
+    m_resumePending = keepMs > 0;
+    m_positionMs = keepMs;
+    m_lastSavedMs = keepMs;
+    m_player->setSource(QUrl());
+    m_player->setSource(url);
+    m_player->setPlaybackRate(m_rate);
+    if (m_resumePending)
+        armResumeWatch();
+    if (resumePlay)
+        m_player->play();
+    else
+        m_player->pause();
+    tryResumeSeek(true);
+    armStallWatch();
+    publish();
+    // Allow another recovery if this one did not unstick.
+    QTimer::singleShot(4000, this, [this, episodeId]() {
+        if (m_episode.id == episodeId)
+            m_recovering = false;
+    });
+}
+
+void PlayerService::handlePrepareForSleep(bool sleeping)
+{
+    if (sleeping) {
+        if (m_episode.id == 0)
+            return;
+        m_playAfterSleep = m_player->playbackState() == QMediaPlayer::PlayingState;
+        if (m_playAfterSleep)
+            m_player->pause();
+        savePosition();
+        publish();
+        return;
+    }
+    // Waking: PipeWire/Qt streams are often dead even if we paused cleanly.
+    if (m_episode.id == 0)
+        return;
+    const bool resume = m_playAfterSleep;
+    m_playAfterSleep = false;
+    // Defer slightly so audio devices finish coming back.
+    QTimer::singleShot(800, this, [this, resume]() {
+        recoverAfterSleep(resume);
+    });
+}
+
+void PlayerService::armStallWatch()
+{
+    if (!m_stallTimer)
+        return;
+    if (m_episode.id != 0
+        && m_player->playbackState() == QMediaPlayer::PlayingState
+        && !m_resumePending) {
+        m_stallAnchorMs = m_positionMs;
+        m_stallSince.restart();
+        if (!m_stallTimer->isActive())
+            m_stallTimer->start();
+    } else {
+        m_stallTimer->stop();
+        m_stallAnchorMs = -1;
+        m_stallSince.invalidate();
+    }
+}
+
+void PlayerService::checkStall()
+{
+    if (m_recovering || m_resumePending || m_episode.id == 0)
+        return;
+    if (m_player->playbackState() != QMediaPlayer::PlayingState) {
+        armStallWatch();
+        return;
+    }
+    if (!m_stallSince.isValid()) {
+        m_stallAnchorMs = m_positionMs;
+        m_stallSince.restart();
+        return;
+    }
+    // Position frozen while Claiming Playing for a few seconds → rebuild.
+    if (m_stallSince.elapsed() >= 2500
+        && qAbs(m_positionMs - m_stallAnchorMs) < 400) {
+        recoverAfterSleep(true);
+    }
+}
+
+void PlayerService::armResumeWatch()
+{
+    m_resumeConfirmSince.invalidate();
+    m_resumeForceTick = 0;
+    m_resumeSince.restart();
+    if (m_resumeTimer && !m_resumeTimer->isActive())
+        m_resumeTimer->start();
+}
+
+void PlayerService::clearResumeWatch()
+{
+    m_resumePending = false;
+    m_resumeConfirmSince.invalidate();
+    if (m_resumeTimer)
+        m_resumeTimer->stop();
+}
+
+void PlayerService::tryResumeSeek(bool forceReposition)
+{
+    Q_UNUSED(forceReposition);
+    if (m_inResumeSeek || !m_resumePending || m_resumeMs <= 0 || m_episode.id == 0)
+        return;
+    const auto status = m_player->mediaStatus();
+    const qint64 duration = m_player->duration();
+    // Avoid seeking during LoadingMedia with no duration (aborts some HTTP MP3s).
+    // Once duration is known or the pipeline reports Loaded/Buffered, SeekTo-style
+    // setPosition works.
+    if (duration <= 0
+        && status != QMediaPlayer::BufferedMedia
+        && status != QMediaPlayer::LoadedMedia)
+        return;
+    const qint64 target = duration > 0 ? qMin<qint64>(m_resumeMs, duration) : m_resumeMs;
+    // setPosition can synchronously re-enter mediaStatusChanged; guard against that
+    // recursion (it previously stack-overflowed through publish → sqlite).
+    m_inResumeSeek = true;
+    m_player->setPosition(target);
+    m_player->setPlaybackRate(m_rate);
+    m_positionMs = target;
+    noteSeek(target);
+    m_inResumeSeek = false;
+}
+
 void PlayerService::savePosition()
 {
     if (m_episode.id == 0)
+        return;
+    // Never replace a larger saved resume target with early playback from 0.
+    // Only SeekTo (user scrub) clears m_resumeMs to allow saving a lower position.
+    if (m_resumeMs > 0 && m_positionMs + 2500 < m_resumeMs)
+        return;
+    if (m_resumeGuardMs > 0 && m_positionMs + 2500 < m_resumeGuardMs
+        && m_resumeGuardingSince.isValid() && m_resumeGuardingSince.elapsed() < 8000)
         return;
     m_library.setPosition(m_episode.id, static_cast<int>(m_positionMs));
     m_lastSavedMs = m_positionMs;

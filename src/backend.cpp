@@ -6,16 +6,15 @@
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
 #include <QDBusReply>
+#include <QDBusServiceWatcher>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QNetworkReply>
 #include <QProcess>
 #include <QCoreApplication>
-#include <QEventLoop>
 #include <QSettings>
 #include <QStandardPaths>
-#include <QThread>
 #include <QTimer>
 #include <QUrl>
 
@@ -72,7 +71,10 @@ Backend::Backend(Library &library, QObject *parent)
     auto *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &Backend::pollPlayer);
     timer->start(500);
-    QTimer::singleShot(0, this, [this]() { refreshAll(); });
+    QTimer::singleShot(0, this, [this]() {
+        restoreLastPlayed();
+        refreshAll();
+    });
 }
 
 void Backend::setStatus(const QString &status)
@@ -313,11 +315,24 @@ void Backend::removeOpenShow()
     const qint64 showId = m_openShowId;
     if (m_playerShowId == showId)
         stopPlayback();
+    const qint64 lastId = m_library.lastPlayedEpisodeId();
+    if (lastId != 0) {
+        const EpisodeRow last = m_library.episode(lastId);
+        if (last.id == 0 || last.showId == showId)
+            m_library.setLastPlayedEpisodeId(0);
+    }
     const QString title = m_openShowTitle;
     const QString image = m_library.showImage(showId);
+    QStringList episodeImages;
+    for (const auto &row : m_library.episodes(showId)) {
+        if (!row.imagePath.isEmpty())
+            episodeImages.append(row.imagePath);
+    }
     m_library.removeShow(showId);
     if (!image.isEmpty())
         QFile::remove(image);
+    for (const QString &path : episodeImages)
+        QFile::remove(path);
     closeShow();
     reloadShows();
     setStatus(QStringLiteral("Removed %1.").arg(title));
@@ -397,6 +412,16 @@ void Backend::fetchNext()
 
 void Backend::downloadCover(qint64 showId, const QString &imageUrl)
 {
+    if (showId == 0 || imageUrl.isEmpty())
+        return;
+    // Skip when the library already points at a file on disk (refresh must not re-hit the CDN).
+    // upsertShow clears image_path when the remote URL changes, so a new cover still downloads.
+    const QString existing = m_library.showImage(showId);
+    if (!existing.isEmpty() && QFileInfo::exists(existing))
+        return;
+    if (m_showCoverDownloads.contains(showId))
+        return;
+    m_showCoverDownloads.insert(showId);
     QNetworkRequest request{QUrl(imageUrl)};
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QStringLiteral("podcast/0.1 (Omarchy)"));
@@ -404,11 +429,15 @@ void Backend::downloadCover(qint64 showId, const QString &imageUrl)
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, showId, imageUrl]() {
         reply->deleteLater();
-        if (reply->error() != QNetworkReply::NoError)
+        if (reply->error() != QNetworkReply::NoError) {
+            m_showCoverDownloads.remove(showId);
             return;
+        }
         const QByteArray bytes = reply->readAll();
-        if (bytes.size() < 32)
+        if (bytes.size() < 32) {
+            m_showCoverDownloads.remove(showId);
             return;
+        }
         const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
             + QStringLiteral("/covers");
         QDir().mkpath(dir);
@@ -416,11 +445,14 @@ void Backend::downloadCover(qint64 showId, const QString &imageUrl)
             bytes, reply->header(QNetworkRequest::ContentTypeHeader).toString());
         const QString path = QStringLiteral("%1/%2.%3").arg(dir).arg(showId).arg(ext);
         QFile file(path);
-        if (!file.open(QIODevice::WriteOnly))
+        if (!file.open(QIODevice::WriteOnly)) {
+            m_showCoverDownloads.remove(showId);
             return;
+        }
         file.write(bytes);
         file.close();
         m_library.setShowImage(showId, imageUrl, path);
+        m_showCoverDownloads.remove(showId);
         reloadShows();
         if (m_openShowId == showId)
             reloadEpisodes();
@@ -486,36 +518,108 @@ void Backend::downloadEpisodeCover(qint64 episodeId, const QString &imageUrl)
     });
 }
 
-bool Backend::ensurePlayer()
+bool Backend::playerReady() const
 {
     auto *bus = QDBusConnection::sessionBus().interface();
-    if (bus && bus->isServiceRegistered(kPlayerService))
-        return true;
-    if (!QProcess::startDetached(QCoreApplication::applicationFilePath(),
-                                 {QStringLiteral("--player")})) {
-        setStatus(QStringLiteral("Could not start playback."));
-        return false;
-    }
-    for (int i = 0; i < 40; ++i) {
-        QThread::msleep(50);
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-        if (bus && bus->isServiceRegistered(kPlayerService))
-            return true;
-    }
-    setStatus(QStringLiteral("Playback did not start."));
-    return false;
+    return bus && bus->isServiceRegistered(kPlayerService);
 }
 
-void Backend::callPlayer(const QString &method, const QVariantList &args)
+void Backend::startPlayerService()
 {
-    if (!ensurePlayer())
+    if (m_startingPlayer)
         return;
+    if (playerReady()) {
+        flushPendingPlayerCalls();
+        return;
+    }
+    if (!QProcess::startDetached(QCoreApplication::applicationFilePath(),
+                                 {QStringLiteral("--player")})) {
+        m_pendingPlayerCalls.clear();
+        setStatus(QStringLiteral("Could not start playback."));
+        return;
+    }
+    m_startingPlayer = true;
+
+    // Wait for the player on the bus without processEvents — nesting that from a
+    // QML click handler can flush deleteLater while a ListView delegate's signal
+    // is still running (cover download → reloadEpisodes → model reset → qFatal).
+    if (!m_playerWatcher) {
+        m_playerWatcher = new QDBusServiceWatcher(
+            kPlayerService, QDBusConnection::sessionBus(),
+            QDBusServiceWatcher::WatchForRegistration, this);
+        connect(m_playerWatcher, &QDBusServiceWatcher::serviceRegistered,
+                this, &Backend::onPlayerServiceRegistered);
+    }
+    if (!m_playerStartTimer) {
+        m_playerStartTimer = new QTimer(this);
+        m_playerStartTimer->setSingleShot(true);
+        connect(m_playerStartTimer, &QTimer::timeout, this, &Backend::onPlayerStartTimeout);
+    }
+    m_playerStartTimer->start(2000);
+
+    // Registration can land before the watcher is connected; recheck once.
+    if (playerReady()) {
+        m_playerStartTimer->stop();
+        m_startingPlayer = false;
+        flushPendingPlayerCalls();
+    }
+}
+
+void Backend::onPlayerServiceRegistered(const QString &service)
+{
+    if (service != kPlayerService)
+        return;
+    if (m_playerStartTimer)
+        m_playerStartTimer->stop();
+    m_startingPlayer = false;
+    flushPendingPlayerCalls();
+}
+
+void Backend::onPlayerStartTimeout()
+{
+    if (playerReady()) {
+        m_startingPlayer = false;
+        flushPendingPlayerCalls();
+        return;
+    }
+    m_startingPlayer = false;
+    m_pendingPlayerCalls.clear();
+    setStatus(QStringLiteral("Playback did not start."));
+}
+
+void Backend::flushPendingPlayerCalls()
+{
+    if (!playerReady())
+        return;
+    const auto pending = m_pendingPlayerCalls;
+    m_pendingPlayerCalls.clear();
+    for (const auto &call : pending)
+        invokePlayer(call.method, call.args);
+}
+
+void Backend::invokePlayer(const QString &method, const QVariantList &args)
+{
     if (!m_player) {
         m_player = new QDBusInterface(kPlayerService, kPlayerPath, kPlayerIface,
                                       QDBusConnection::sessionBus(), this);
     }
     m_player->callWithArgumentList(QDBus::Block, method, args);
     pollPlayer();
+}
+
+void Backend::callPlayer(const QString &method, const QVariantList &args)
+{
+    if (playerReady()) {
+        m_startingPlayer = false;
+        if (m_playerStartTimer)
+            m_playerStartTimer->stop();
+        // Run anything queued while the service was coming up, then this call.
+        flushPendingPlayerCalls();
+        invokePlayer(method, args);
+        return;
+    }
+    m_pendingPlayerCalls.append({method, args});
+    startPlayerService();
 }
 
 void Backend::playEpisode(qint64 episodeId)
@@ -682,6 +786,27 @@ QString Backend::countMessage(int count, const QString &what) const
     if (count == 1)
         return QStringLiteral("Marked 1 %1 as played.").arg(what);
     return QStringLiteral("Marked %1 %2s as played.").arg(count).arg(what);
+}
+
+void Backend::restoreLastPlayed()
+{
+    auto *bus = QDBusConnection::sessionBus().interface();
+    if (bus && bus->isServiceRegistered(kPlayerService)) {
+        pollPlayer();
+        if (m_playerEpisodeId != 0)
+            return;
+    }
+    const qint64 id = m_library.lastPlayedEpisodeId();
+    if (id == 0)
+        return;
+    const EpisodeRow row = m_library.episode(id);
+    if (row.id == 0) {
+        m_library.setLastPlayedEpisodeId(0);
+        return;
+    }
+    if (!row.imageUrl.isEmpty() && row.imagePath.isEmpty())
+        downloadEpisodeCover(row.id, row.imageUrl);
+    callPlayer(QStringLiteral("LoadPaused"), {QVariant::fromValue<qlonglong>(id)});
 }
 
 void Backend::pollPlayer()

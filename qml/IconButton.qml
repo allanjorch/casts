@@ -38,6 +38,11 @@ Button {
              : "transparent"
     }
 
+    HoverHandler {
+        enabled: control.enabled
+        cursorShape: Qt.PointingHandCursor
+    }
+
     AppTip {
         visible: control.hovered && control.tip.length > 0
         text: control.tip

@@ -145,6 +145,11 @@ Item {
                         font.weight: Font.Normal
                         font.family: "monospace"
                     }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: backend.togglePlayback()
+                    }
                 }
             }
 
@@ -180,6 +185,11 @@ Item {
                         font.pixelSize: theme.caption
                         font.weight: Font.Normal
                         font.family: "monospace"
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: backend.togglePlayback()
                     }
                 }
 

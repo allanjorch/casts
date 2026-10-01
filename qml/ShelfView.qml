@@ -18,6 +18,8 @@ Item {
     readonly property real coverSize: Math.max(columnFloor, cellWidth - galleryGap)
     readonly property real cellHeight: coverSize + theme.titleSize * 2.4 + 22
     readonly property real caughtUpVeil: 0.38
+    // Stronger than caught-up while refresh-all runs; cleared with backend.busy on success or failure.
+    readonly property real refreshVeil: 0.62
     // Five steps. 0 matches the original 44px list cover. Keep the count in step with shelfListSize.
     readonly property var listCoverSteps: [44, 64, 88, 120, 160]
     readonly property int listCoverBase: listCoverSteps[Math.max(0, Math.min(backend.shelfListSize, listCoverSteps.length - 1))]
@@ -104,22 +106,40 @@ Item {
             IconButton {
                 icon.name: "list-add-symbolic"
                 tip: "Add feed"
+                enabled: !backend.busy
                 onClicked: shelf.addRequested()
             }
             IconButton {
                 icon.name: "document-open-symbolic"
                 tip: "Import OPML"
+                enabled: !backend.busy
                 onClicked: shelf.importRequested()
             }
             IconButton {
+                id: refreshButton
                 icon.name: "view-refresh-symbolic"
-                tip: "Refresh"
+                tip: backend.busy ? "Refreshing…" : "Refresh"
+                enabled: !backend.busy
                 onClicked: backend.refreshAll()
+
+                RotationAnimator {
+                    target: refreshButton
+                    from: 0
+                    to: 360
+                    duration: 900
+                    loops: Animation.Infinite
+                    running: backend.busy
+                    onRunningChanged: {
+                        if (!running)
+                            refreshButton.rotation = 0
+                    }
+                }
             }
             IconButton {
                 icon.name: "check-plain-symbolic"
-                enabled: backend.playerEpisodeId !== 0
-                tip: enabled ? "Mark" : "Play an episode to mark it"
+                enabled: !backend.busy && backend.playerEpisodeId !== 0
+                tip: backend.busy ? "Refreshing…"
+                     : (enabled ? "Mark" : "Play an episode to mark it")
                 onClicked: {
                     shelf.markedPlayed = backend.playerPlayed
                     markMenu.popup()
@@ -127,7 +147,9 @@ Item {
             }
             IconButton {
                 icon.name: backend.shelfView === "list" ? "view-list-symbolic" : "view-grid-symbolic"
-                tip: backend.shelfView === "list" ? "Show as gallery" : "Show as list"
+                tip: backend.busy ? "Refreshing…"
+                     : (backend.shelfView === "list" ? "Show as gallery" : "Show as list")
+                enabled: !backend.busy
                 onClicked: backend.setShelfView(backend.shelfView === "list" ? "gallery" : "list")
             }
         }
@@ -207,12 +229,12 @@ Item {
                     }
                     Rectangle {
                         anchors.fill: parent
-                        visible: model.unheard === 0
+                        visible: model.unheard === 0 && !backend.busy
                         color: theme.background
                         opacity: shelf.caughtUpVeil
                     }
                     Rectangle {
-                        visible: model.unheard > 0
+                        visible: model.unheard > 0 && !backend.busy
                         anchors.top: parent.top
                         anchors.right: parent.right
                         anchors.margins: 8
@@ -229,12 +251,18 @@ Item {
                             font.weight: Font.Normal
                         }
                     }
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: backend.busy
+                        color: theme.background
+                        opacity: shelf.refreshVeil
+                    }
                 }
 
                 Text {
                     width: parent.width
                     text: model.title
-                    color: model.unheard > 0 ? theme.foreground : theme.dim
+                    color: (backend.busy || model.unheard === 0) ? theme.dim : theme.foreground
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
                     maximumLineCount: 2
@@ -246,7 +274,9 @@ Item {
 
             MouseArea {
                 anchors.fill: parent
+                enabled: !backend.busy
                 hoverEnabled: true
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: backend.openShow(model.showId)
                 onWheel: (wheel) => shelf.takeWheel(wheel)
                 Rectangle {
@@ -319,12 +349,12 @@ Item {
                 }
                 Rectangle {
                     anchors.fill: parent
-                    visible: model.unheard === 0
+                    visible: model.unheard === 0 && !backend.busy
                     color: theme.background
                     opacity: shelf.caughtUpVeil
                 }
                 Rectangle {
-                    visible: model.unheard > 0
+                    visible: model.unheard > 0 && !backend.busy
                     anchors.top: parent.top
                     anchors.right: parent.right
                     anchors.margins: parent.width >= 96 ? 8 : 4
@@ -341,6 +371,12 @@ Item {
                         font.weight: Font.Normal
                     }
                 }
+                Rectangle {
+                    anchors.fill: parent
+                    visible: backend.busy
+                    color: theme.background
+                    opacity: shelf.refreshVeil
+                }
             }
             Column {
                 anchors.left: rowArt.right
@@ -352,7 +388,7 @@ Item {
                 Text {
                     width: parent.width
                     text: model.title
-                    color: model.unheard > 0 ? theme.foreground : theme.dim
+                    color: (backend.busy || model.unheard === 0) ? theme.dim : theme.foreground
                     elide: Text.ElideRight
                     font.pixelSize: theme.titleSize
                     font.weight: Font.Normal
@@ -369,7 +405,9 @@ Item {
             MouseArea {
                 id: rowMouse
                 anchors.fill: parent
+                enabled: !backend.busy
                 hoverEnabled: true
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: backend.openShow(model.showId)
                 onWheel: (wheel) => shelf.takeWheel(wheel)
             }

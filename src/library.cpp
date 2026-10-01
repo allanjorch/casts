@@ -1,6 +1,7 @@
 #include "library.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -265,8 +266,19 @@ qint64 Library::upsertShow(const QString &feedUrl, const ParsedShow &parsed)
             db.rollback();
             return 0;
         }
-        if (imageUrl != parsed.imageUrl)
+        // URL changed: drop cached path + file so downloadCover fetches the new cover.
+        if (imageUrl != parsed.imageUrl) {
+            if (!imagePath.isEmpty())
+                QFile::remove(imagePath);
             imagePath.clear();
+            QSqlQuery clearPath(db);
+            clearPath.prepare(QStringLiteral("UPDATE shows SET image_path = '' WHERE id = ?"));
+            clearPath.addBindValue(showId);
+            if (!clearPath.exec()) {
+                db.rollback();
+                return 0;
+            }
+        }
     } else {
         QSqlQuery insert(db);
         insert.prepare(QStringLiteral(
@@ -495,6 +507,21 @@ void Library::setVolume(double volume)
 {
     const double clamped = qBound(0.0, volume, 1.0);
     setSetting(QStringLiteral("volume"), QString::number(clamped, 'f', 3));
+}
+
+qint64 Library::lastPlayedEpisodeId() const
+{
+    bool ok = false;
+    const qint64 value = setting(QStringLiteral("player.lastEpisode"), QStringLiteral("0")).toLongLong(&ok);
+    if (!ok || value < 0)
+        return 0;
+    return value;
+}
+
+void Library::setLastPlayedEpisodeId(qint64 episodeId)
+{
+    setSetting(QStringLiteral("player.lastEpisode"),
+               QString::number(qMax<qint64>(0, episodeId)));
 }
 
 QString Library::shelfView() const

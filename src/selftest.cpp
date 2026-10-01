@@ -3,6 +3,8 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
 
 namespace {
@@ -130,6 +132,24 @@ int runSelfTest(int argc, char **argv)
         check(showId != 0, "insert show");
         const auto again = library.upsertShow(QStringLiteral("https://example.com/feed.xml"), *parsed);
         check(again == showId, "refresh keeps the show");
+        {
+            const QString coverPath = dir.filePath(QStringLiteral("cover.jpg"));
+            QFile cover(coverPath);
+            check(cover.open(QIODevice::WriteOnly) && cover.write("fake-cover-bytes-for-cache-test") > 0,
+                  "write fake cover");
+            cover.close();
+            library.setShowImage(showId, parsed->imageUrl, coverPath);
+            check(library.showImage(showId) == coverPath, "show image path stored");
+            library.upsertShow(QStringLiteral("https://example.com/feed.xml"), *parsed);
+            check(library.showImage(showId) == coverPath, "same cover URL keeps image_path");
+            ParsedShow moved = *parsed;
+            moved.imageUrl = QStringLiteral("https://example.com/cover-v2.jpg");
+            library.upsertShow(QStringLiteral("https://example.com/feed.xml"), moved);
+            check(library.showImage(showId).isEmpty(), "new cover URL clears image_path");
+            check(!QFileInfo::exists(coverPath), "stale cover file removed");
+            // Restore original URL for later episode checks.
+            library.upsertShow(QStringLiteral("https://example.com/feed.xml"), *parsed);
+        }
         const auto episodes = library.episodes(showId);
         check(episodes.size() == 3, "stored episodes");
         if (episodes.size() == 3) {
@@ -153,6 +173,21 @@ int runSelfTest(int argc, char **argv)
             check(library.episode(middle).played, "all played");
             check(library.adjacent(middle, true, false) == older, "adjacent older");
             check(library.adjacent(middle, false, false) == newest, "adjacent newer");
+            library.setPosition(middle, 123456);
+            check(library.episode(middle).positionMs == 123456, "persist position_ms");
+            library.setPosition(middle, 0);
+            check(library.episode(middle).positionMs == 0, "clear position_ms");
+            // Resume clamp: near-end progress restarts; mid progress is kept for Load.
+            library.setPosition(newest, 3723 * 1000 - 1000);
+            check(library.episode(newest).positionMs == 3723 * 1000 - 1000, "near-end position stored");
+            library.setPosition(newest, 900000);
+            check(library.episode(newest).positionMs == 900000, "mid position stored for resume");
+            library.setLastPlayedEpisodeId(middle);
+            check(library.lastPlayedEpisodeId() == middle, "persist lastPlayed episode id");
+            library.setLastPlayedEpisodeId(0);
+            check(library.lastPlayedEpisodeId() == 0, "clear lastPlayed episode id");
+            library.setLastPlayedEpisodeId(newest);
+            check(library.lastPlayedEpisodeId() == newest, "set lastPlayed for restore");
         }
 
         ParsedShow caughtUp = *parsed;

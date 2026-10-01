@@ -11,7 +11,9 @@
 #include <QVariantMap>
 
 class QDBusInterface;
+class QDBusServiceWatcher;
 class QNetworkReply;
+class QTimer;
 
 class Backend : public QObject {
     Q_OBJECT
@@ -142,11 +144,22 @@ private:
     void downloadCover(qint64 showId, const QString &imageUrl);
     void downloadEpisodeCover(qint64 episodeId, const QString &imageUrl);
     void refreshOpenEpisode();
-    bool ensurePlayer();
+    bool playerReady() const;
+    void startPlayerService();
+    void onPlayerServiceRegistered(const QString &service);
+    void onPlayerStartTimeout();
+    void flushPendingPlayerCalls();
+    void invokePlayer(const QString &method, const QVariantList &args);
     void pollPlayer();
     void applyPlayerState(const QVariantMap &state);
     void callPlayer(const QString &method, const QVariantList &args = {});
+    void restoreLastPlayed();
     QString countMessage(int count, const QString &what) const;
+
+    struct PendingPlayerCall {
+        QString method;
+        QVariantList args;
+    };
 
     Library &m_library;
     ShowModel m_shows;
@@ -186,5 +199,10 @@ private:
     bool m_sawPlayed = false;
     bool m_returnToShelfOnClose = false;
     QDBusInterface *m_player = nullptr;
+    QDBusServiceWatcher *m_playerWatcher = nullptr;
+    QTimer *m_playerStartTimer = nullptr;
+    bool m_startingPlayer = false;
+    QList<PendingPlayerCall> m_pendingPlayerCalls;
+    QSet<qint64> m_showCoverDownloads;
     QSet<qint64> m_episodeCoverDownloads;
 };

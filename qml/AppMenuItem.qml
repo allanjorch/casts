@@ -23,4 +23,9 @@ MenuItem {
     background: Rectangle {
         color: item.highlighted && item.enabled ? theme.selection : "transparent"
     }
+
+    HoverHandler {
+        enabled: item.enabled
+        cursorShape: Qt.PointingHandCursor
+    }
 }

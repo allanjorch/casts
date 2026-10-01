@@ -18,7 +18,7 @@ Designed together by [Allan Kristensen](https://github.com/allanjorch) and [Grok
 
 **Now Playing.** Tap the bar cover or the expand control. Large cover, titles, transport, scrubber, and speed. Short windows collapse to a compact layout; the player bar stays underneath.
 
-**Player bar.** Back 15s, play/pause, forward 30s, scrubber, volume, speed cycle, Now Playing, and Mark. Click the title for that episode’s details (Back from there returns to the shelf). Visible whenever an episode is loaded.
+**Player bar.** Back 15s, play/pause, forward 30s, scrubber, volume, speed cycle, Now Playing, and Mark. Click the title for that episode’s details (Back from there returns to the shelf). Visible whenever an episode is loaded. After a full quit, the last started episode comes back paused at its saved position.
 
 **Volume.** App-specific via Qt Multimedia on this player’s output (0–100%). Remembered in the library. Soft gain above 100% is not available.
 

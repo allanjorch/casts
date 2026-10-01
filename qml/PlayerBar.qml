@@ -83,7 +83,8 @@ Rectangle {
             }
             MouseArea {
                 anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
+                enabled: !backend.busy
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: bar.nowPlayingRequested()
             }
         }
@@ -105,6 +106,7 @@ Rectangle {
                     IconButton {
                         icon.name: "media-seek-backward-symbolic"
                         tip: "Back 15 seconds"
+                        enabled: !backend.busy
                         onClicked: bar.nudge(-15)
                     }
                     IconButton {
@@ -112,11 +114,13 @@ Rectangle {
                                    ? "media-playback-pause-symbolic"
                                    : "media-playback-start-symbolic"
                         tip: backend.playerStatus === "playing" ? "Pause" : "Play"
+                        enabled: !backend.busy
                         onClicked: backend.togglePlayback()
                     }
                     IconButton {
                         icon.name: "media-seek-forward-symbolic"
                         tip: "Forward 30 seconds"
+                        enabled: !backend.busy
                         onClicked: bar.nudge(30)
                     }
                 }
@@ -129,6 +133,7 @@ Rectangle {
                         id: volumeButton
                         icon.name: bar.volumeIcon(backend.playerVolume)
                         tip: "Volume"
+                        enabled: !backend.busy
                         onClicked: {
                             volumePopup.x = volumeButton.mapToItem(bar, 0, 0).x
                                           + volumeButton.width / 2 - volumePopup.width / 2
@@ -139,16 +144,19 @@ Rectangle {
                     IconButton {
                         caption: rateLabel(backend.playerRate)
                         tip: "Playback speed"
+                        enabled: !backend.busy
                         onClicked: backend.cycleRate()
                     }
                     IconButton {
                         icon.name: "view-fullscreen-symbolic"
                         tip: "Now playing"
+                        enabled: !backend.busy
                         onClicked: bar.nowPlayingRequested()
                     }
                     IconButton {
                         icon.name: "check-plain-symbolic"
                         tip: "Mark"
+                        enabled: !backend.busy
                         onClicked: {
                             bar.markedPlayed = backend.playerPlayed
                             markMenu.popup()
@@ -170,7 +178,8 @@ Rectangle {
 
                     MouseArea {
                         anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
+                        enabled: !backend.busy
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: backend.openPlayingEpisode()
                     }
                 }
@@ -211,7 +220,8 @@ Rectangle {
                     MouseArea {
                         anchors.fill: parent
                         anchors.margins: -8
-                        cursorShape: Qt.PointingHandCursor
+                        enabled: !backend.busy
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onPressed: function(mouse) {
                             bar.dragging = true
                             bar.dragFraction = Math.max(0, Math.min(1, mouse.x / track.width))
@@ -273,6 +283,7 @@ Rectangle {
                 stepSize: 0.01
                 value: backend.playerVolume
                 orientation: Qt.Vertical
+                enabled: !backend.busy
                 onMoved: backend.setVolume(value)
 
                 background: Item {
@@ -312,26 +323,29 @@ Rectangle {
         id: markMenu
         AppMenuItem {
             text: "Mark as played"
-            enabled: !bar.markedPlayed
+            enabled: !backend.busy && !bar.markedPlayed
             onTriggered: backend.markPlayed(backend.playerEpisodeId, true)
         }
         AppMenuItem {
             text: "Mark as unplayed"
-            enabled: bar.markedPlayed
+            enabled: !backend.busy && bar.markedPlayed
             onTriggered: backend.markPlayed(backend.playerEpisodeId, false)
         }
         AppMenuSeparator {}
         AppMenuItem {
             text: "Mark older as played"
+            enabled: !backend.busy
             onTriggered: backend.markOlderPlayed(backend.playerEpisodeId)
         }
         AppMenuItem {
             text: "Mark newer as played"
+            enabled: !backend.busy
             onTriggered: backend.markNewerPlayed(backend.playerEpisodeId)
         }
         AppMenuSeparator {}
         AppMenuItem {
             text: "Mark all as played"
+            enabled: !backend.busy
             onTriggered: bar.markAllRequested()
         }
     }
