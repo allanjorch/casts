@@ -151,6 +151,10 @@ ApplicationWindow {
         function onOpenShowChanged() {
             if (!navGuard && backend.openShowId !== 0)
                 clearForward()
+            rememberShow(backend.openShowId)
+        }
+        function onEpisodeModelDiscarded(showId) {
+            forgetShow(showId)
         }
         function onOpenEpisodeChanged() {
             if (!navGuard && backend.openEpisodeId !== 0)
@@ -187,13 +191,42 @@ ApplicationWindow {
         }
         onActivated: navigateBack()
     }
+    function rememberShow(showId) {
+        if (!showId)
+            return
+        for (var i = 0; i < warmShows.count; ++i) {
+            if (warmShows.get(i).showId === showId)
+                return
+        }
+        warmShows.append({ showId: showId })
+    }
+
+    function forgetShow(showId) {
+        for (var i = warmShows.count - 1; i >= 0; --i) {
+            if (warmShows.get(i).showId === showId)
+                warmShows.remove(i)
+        }
+    }
+
+    function activeShow() {
+        for (var i = 0; i < showRepeater.count; ++i) {
+            var page = showRepeater.itemAt(i)
+            if (page && page.showId === backend.openShowId)
+                return page
+        }
+        return null
+    }
+
     function zoomFromWheel(delta) {
         if (addOpen || confirmAll || confirmRemove || nowPlayingOpen || backend.openEpisodeId !== 0)
             return false
-        if (backend.openShowId !== 0)
-            showView.applyZoomDelta(delta)
-        else
+        if (backend.openShowId !== 0) {
+            var page = activeShow()
+            if (page)
+                page.applyZoomDelta(delta)
+        } else {
             shelfView.applyZoomDelta(delta)
+        }
         return true
     }
 
@@ -207,13 +240,29 @@ ApplicationWindow {
         sequences: [StandardKey.ZoomIn, "Ctrl+="]
         context: Qt.ApplicationShortcut
         enabled: backend.openEpisodeId === 0 && !addOpen && !confirmAll && !confirmRemove && !nowPlayingOpen
-        onActivated: backend.openShowId !== 0 ? showView.zoomIn() : shelfView.zoomIn()
+        onActivated: {
+            if (backend.openShowId !== 0) {
+                var page = win.activeShow()
+                if (page)
+                    page.zoomIn()
+            } else {
+                shelfView.zoomIn()
+            }
+        }
     }
     Shortcut {
         sequence: StandardKey.ZoomOut
         context: Qt.ApplicationShortcut
         enabled: backend.openEpisodeId === 0 && !addOpen && !confirmAll && !confirmRemove && !nowPlayingOpen
-        onActivated: backend.openShowId !== 0 ? showView.zoomOut() : shelfView.zoomOut()
+        onActivated: {
+            if (backend.openShowId !== 0) {
+                var page = win.activeShow()
+                if (page)
+                    page.zoomOut()
+            } else {
+                shelfView.zoomOut()
+            }
+        }
     }
 
     ColumnLayout {
@@ -231,6 +280,7 @@ ApplicationWindow {
             ShelfView {
                 id: shelfView
                 anchors.fill: parent
+                z: 0
                 visible: backend.openShowId === 0
                 onAddRequested: {
                     feedField.text = ""
@@ -241,22 +291,33 @@ ApplicationWindow {
                 onMarkAllRequested: win.confirmAll = true
             }
 
-            ShowView {
-                id: showView
-                anchors.fill: parent
-                visible: backend.openShowId !== 0 && backend.openEpisodeId === 0
-                onMarkAllRequested: win.confirmAll = true
-                onRemoveRequested: win.confirmRemove = true
+            // One episode page per visited show. Back only hides it, so the
+            // list and its decoded covers stay warm for the next open.
+            ListModel { id: warmShows }
+            Repeater {
+                id: showRepeater
+                model: warmShows
+                ShowView {
+                    showId: model.showId
+                    episodeModel: backend.episodesFor(model.showId)
+                    anchors.fill: parent
+                    z: 1
+                    visible: backend.openShowId === showId && backend.openEpisodeId === 0
+                    onMarkAllRequested: win.confirmAll = true
+                    onRemoveRequested: win.confirmRemove = true
+                }
             }
 
             EpisodeView {
                 anchors.fill: parent
+                z: 2
                 visible: backend.openEpisodeId !== 0
                 onMarkAllRequested: win.confirmAll = true
             }
 
             NowPlaying {
                 anchors.fill: parent
+                z: 3
                 visible: win.nowPlayingOpen && backend.playerEpisodeId !== 0
                 onDismissRequested: win.nowPlayingOpen = false
             }

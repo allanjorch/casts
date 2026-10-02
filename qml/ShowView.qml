@@ -8,6 +8,9 @@ Item {
 
     property var markedEpisode: 0
     property bool markedPlayed: false
+    // Which show this page is holding. Main keeps one page per visited show.
+    property double showId: 0
+    property var episodeModel: null
     // Same five list-cover steps as ShelfView. 0 matches Shelf's original 44px.
     readonly property var listCoverSteps: [44, 64, 88, 120, 160]
     readonly property int listCoverBase: listCoverSteps[Math.max(0, Math.min(backend.episodeListSize, listCoverSteps.length - 1))]
@@ -177,8 +180,10 @@ Item {
         anchors.bottom: parent.bottom
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        model: backend.episodes
+        model: page.episodeModel !== null ? page.episodeModel : backend.episodes
         spacing: 2
+        // Keep a screenful of delegates so scrolling back up does not rebuild art.
+        cacheBuffer: height
 
         delegate: Rectangle {
             id: row
@@ -212,7 +217,11 @@ Item {
                     anchors.fill: parent
                     source: playWell.art
                     fillMode: Image.PreserveAspectCrop
-                    asynchronous: true
+                    // Synchronous so a cache hit paints with the delegate.
+                    // asynchronous:true completes one row at a time and reads as a
+                    // top-to-bottom cascade even when the file is already on disk.
+                    asynchronous: false
+                    cache: true
                     sourceSize.width: page.listCover * 2
                     sourceSize.height: page.listCover * 2
                     visible: playWell.art !== ""

@@ -1,5 +1,8 @@
+#include "covercache.h"
 #include "feed.h"
 #include "library.h"
+
+#include <QUrl>
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -157,6 +160,27 @@ int runSelfTest(int argc, char **argv)
                   "stored description");
             check(episodes.at(0).imageUrl == QStringLiteral("https://example.com/ep-n.jpg"),
                   "stored episode image");
+            {
+                const qint64 epId = episodes.at(0).id;
+                const QString epCover = dir.filePath(QStringLiteral("ep-n.jpg"));
+                QFile epFile(epCover);
+                check(epFile.open(QIODevice::WriteOnly) && epFile.write("episode-cover-bytes") > 0,
+                      "write episode cover");
+                epFile.close();
+                library.setEpisodeImage(epId, episodes.at(0).imageUrl, epCover);
+                check(library.episode(epId).imagePath == epCover, "episode image path stored");
+                library.upsertShow(QStringLiteral("https://example.com/feed.xml"), *parsed);
+                check(library.episode(epId).imagePath == epCover,
+                      "same episode image URL keeps image_path");
+                check(QFileInfo::exists(epCover), "episode cover file kept");
+                ParsedShow movedEp = *parsed;
+                movedEp.episodes[0].imageUrl = QStringLiteral("https://example.com/ep-n-v2.jpg");
+                library.upsertShow(QStringLiteral("https://example.com/feed.xml"), movedEp);
+                check(library.episode(epId).imagePath.isEmpty(),
+                      "new episode image URL clears image_path");
+                check(!QFileInfo::exists(epCover), "stale episode cover file removed");
+                library.upsertShow(QStringLiteral("https://example.com/feed.xml"), *parsed);
+            }
             const qint64 newest = episodes.at(0).id;
             const qint64 middle = episodes.at(1).id;
             const qint64 older = episodes.at(2).id;
@@ -241,6 +265,23 @@ int runSelfTest(int argc, char **argv)
         library.setEpisodeShowAll(true);
         check(library.shelfShowAll(), "shelf eye reopens");
         check(library.episodeShowAll(), "episode eye reopens");
+    }
+
+    {
+        QTemporaryDir covers;
+        const QString path = covers.filePath(QStringLiteral("episode art.jpg"));
+        QFile file(path);
+        check(file.open(QIODevice::WriteOnly) && file.write("x") > 0, "write cover for url");
+        file.close();
+        const QString src = localCoverSource(path);
+        check(src.startsWith(QStringLiteral("image://covers/")), "cover url scheme");
+        // Same slash-stripping QQuick applies when it asks the image provider.
+        QString id = QUrl(src).toString(QUrl::RemoveScheme | QUrl::RemoveAuthority).mid(1);
+        id = QUrl::fromPercentEncoding(id.toUtf8());
+        if (!id.startsWith(QLatin1Char('/')) && QFileInfo::exists(QLatin1Char('/') + id))
+            id.prepend(QLatin1Char('/'));
+        check(id == path, "cover url round trip");
+        check(localCoverSource(QString()).isEmpty(), "missing cover has no url");
     }
 
     if (g_fails == 0) {

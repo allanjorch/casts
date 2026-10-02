@@ -3,6 +3,7 @@
 #include "library.h"
 #include "models.h"
 
+#include <QHash>
 #include <QNetworkAccessManager>
 #include <QObject>
 #include <QPointer>
@@ -102,6 +103,8 @@ public:
     Q_INVOKABLE void refreshOpenShow();
     Q_INVOKABLE void openShow(qint64 showId);
     Q_INVOKABLE void closeShow();
+    // Stable per-show list. Kept after Back so the episode view is not rebuilt.
+    Q_INVOKABLE QObject *episodesFor(qint64 showId);
     Q_INVOKABLE void openEpisode(qint64 episodeId);
     Q_INVOKABLE void openPlayingEpisode();
     Q_INVOKABLE void closeEpisode();
@@ -138,11 +141,17 @@ signals:
     void playerPositionChanged();
     void shelfLayoutChanged();
     void filterChanged();
+    void episodeModelDiscarded(qint64 showId);
     void raised();
 
 private:
     struct Job {
         QString url;
+    };
+
+    struct EpisodeCoverJob {
+        qint64 episodeId = 0;
+        QString imageUrl;
     };
 
     void setStatus(const QString &status);
@@ -153,10 +162,17 @@ private:
     void reloadEpisodes();
     QList<ShowRow> visibleShows() const;
     QList<EpisodeRow> visibleEpisodes(qint64 showId) const;
+    EpisodeModel *episodeModel(qint64 showId, bool create);
+    void syncEpisodeModel(qint64 showId);
+    void discardEpisodeModel(qint64 showId);
     void enqueue(const QStringList &urls);
     void fetchNext();
     void downloadCover(qint64 showId, const QString &imageUrl);
     void downloadEpisodeCover(qint64 episodeId, const QString &imageUrl);
+    void ensureEpisodeCovers(const QList<EpisodeRow> &rows);
+    void enqueueEpisodeCover(qint64 episodeId, const QString &imageUrl, bool front);
+    void pumpEpisodeCovers();
+    void startEpisodeCoverDownload(qint64 episodeId, const QString &imageUrl);
     void refreshOpenEpisode();
     bool playerReady() const;
     void startPlayerService();
@@ -178,6 +194,7 @@ private:
     Library &m_library;
     ShowModel m_shows;
     EpisodeModel m_episodes;
+    QHash<qint64, EpisodeModel *> m_episodeModels;
     QNetworkAccessManager m_network;
     QList<Job> m_queue;
     QPointer<QNetworkReply> m_active;
@@ -220,4 +237,6 @@ private:
     QList<PendingPlayerCall> m_pendingPlayerCalls;
     QSet<qint64> m_showCoverDownloads;
     QSet<qint64> m_episodeCoverDownloads;
+    QList<EpisodeCoverJob> m_episodeCoverQueue;
+    QSet<qint64> m_episodeCoverQueued;
 };

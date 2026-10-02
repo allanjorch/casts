@@ -50,6 +50,8 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     void setRows(const QList<EpisodeRow> &rows);
+    // Swap one row to a cached file without resetting the list.
+    void setImagePath(qint64 episodeId, const QString &imagePath);
 
 private:
     QList<EpisodeRow> m_rows;

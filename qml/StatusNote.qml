@@ -34,5 +34,9 @@ Text {
         function onStatusChanged() { note.reveal() }
     }
 
-    Component.onCompleted: note.reveal()
+    // Do not reveal onCompleted. Cold show pages are created after a shelf
+    // refresh has already set backend.status; resurrecting that string made
+    // every first open look like "Refresh finished with errors." Warm pages
+    // already existed (and had faded), so they never showed it. Live updates
+    // still arrive through statusChanged while the note exists.
 }

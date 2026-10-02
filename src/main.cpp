@@ -1,4 +1,5 @@
 #include "backend.h"
+#include "covercache.h"
 #include "player.h"
 #include "theme.h"
 
@@ -136,6 +137,7 @@ int main(int argc, char **argv)
     bus.registerService(uiService);
 
     QQmlApplicationEngine engine;
+    engine.addImageProvider(QStringLiteral("covers"), new CoverImageProvider);
     engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
     engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));

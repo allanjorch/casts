@@ -11,6 +11,7 @@ SOURCES += \
     src/feed.cpp \
     src/theme.cpp \
     src/models.cpp \
+    src/covercache.cpp \
     src/backend.cpp \
     src/player.cpp \
     src/growingmediadevice.cpp \
@@ -21,6 +22,7 @@ HEADERS += \
     src/feed.h \
     src/theme.h \
     src/models.h \
+    src/covercache.h \
     src/backend.h \
     src/player.h \
     src/growingmediadevice.h

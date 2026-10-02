@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QStandardPaths>
@@ -294,6 +295,28 @@ qint64 Library::upsertShow(const QString &feedUrl, const ParsedShow &parsed)
         showId = insert.lastInsertId().toLongLong();
     }
 
+    struct PreviousEpisodeImage {
+        QString imageUrl;
+        QString imagePath;
+    };
+    QHash<QString, PreviousEpisodeImage> previousImages;
+    {
+        QSqlQuery existing(db);
+        existing.prepare(QStringLiteral(
+            "SELECT guid, image_url, image_path FROM episodes WHERE show_id = ?"));
+        existing.addBindValue(showId);
+        if (!existing.exec()) {
+            m_error = existing.lastError().text();
+            db.rollback();
+            return 0;
+        }
+        while (existing.next()) {
+            previousImages.insert(existing.value(0).toString(),
+                                  PreviousEpisodeImage{existing.value(1).toString(),
+                                                       existing.value(2).toString()});
+        }
+    }
+
     QSqlQuery upsert(db);
     if (!upsert.prepare(QStringLiteral(
         "INSERT INTO episodes (show_id, guid, title, description, audio_url, image_url,"
@@ -314,6 +337,11 @@ qint64 Library::upsertShow(const QString &feedUrl, const ParsedShow &parsed)
         return 0;
     }
     for (const auto &ep : parsed.episodes) {
+        const auto previous = previousImages.constFind(ep.guid);
+        if (previous != previousImages.cend() && previous->imageUrl != ep.imageUrl
+            && !previous->imagePath.isEmpty()) {
+            QFile::remove(previous->imagePath);
+        }
         upsert.addBindValue(showId);
         upsert.addBindValue(ep.guid);
         upsert.addBindValue(ep.title);
