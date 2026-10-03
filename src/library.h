@@ -72,6 +72,7 @@ public:
 
     int markPlayed(qint64 episodeId, bool played);
     int markAllPlayed(qint64 showId);
+    int markLibraryPlayed();
     int markOlderPlayed(qint64 episodeId);
     int markNewerPlayed(qint64 episodeId);
 

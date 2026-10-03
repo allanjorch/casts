@@ -180,6 +180,7 @@ Item {
         anchors.bottom: parent.bottom
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        FastWheel { }
         model: page.episodeModel !== null ? page.episodeModel : backend.episodes
         spacing: 2
         // Keep a screenful of delegates so scrolling back up does not rebuild art.
@@ -328,6 +329,15 @@ Item {
                 onWheel: (wheel) => page.takeWheel(wheel)
             }
         }
+    }
+
+    QuietScroll {
+        view: list
+        loadedCount: list.count
+        anchors.top: list.top
+        anchors.bottom: list.bottom
+        anchors.right: parent.right
+        anchors.rightMargin: 2
     }
 
     AppMenu {

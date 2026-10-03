@@ -31,6 +31,7 @@ ApplicationWindow {
 
     property bool addOpen: false
     property bool confirmAll: false
+    property bool confirmLibrary: false
     property bool confirmRemove: false
     property bool nowPlayingOpen: false
     property rect normalGeometry: Qt.rect(x, y, width, height)
@@ -103,6 +104,8 @@ ApplicationWindow {
             addOpen = false
         } else if (confirmAll) {
             confirmAll = false
+        } else if (confirmLibrary) {
+            confirmLibrary = false
         } else if (confirmRemove) {
             confirmRemove = false
         } else if (backend.openEpisodeId !== 0) {
@@ -124,7 +127,7 @@ ApplicationWindow {
     function navigateForward() {
         if (forwardStack.length === 0)
             return
-        if (addOpen || confirmAll || confirmRemove)
+        if (addOpen || confirmAll || confirmLibrary || confirmRemove)
             return
         var stack = forwardStack.slice()
         var entry = stack.pop()
@@ -218,7 +221,7 @@ ApplicationWindow {
     }
 
     function zoomFromWheel(delta) {
-        if (addOpen || confirmAll || confirmRemove || nowPlayingOpen || backend.openEpisodeId !== 0)
+        if (addOpen || confirmAll || confirmLibrary || confirmRemove || nowPlayingOpen || backend.openEpisodeId !== 0)
             return false
         if (backend.openShowId !== 0) {
             var page = activeShow()
@@ -239,7 +242,7 @@ ApplicationWindow {
     Shortcut {
         sequences: [StandardKey.ZoomIn, "Ctrl+="]
         context: Qt.ApplicationShortcut
-        enabled: backend.openEpisodeId === 0 && !addOpen && !confirmAll && !confirmRemove && !nowPlayingOpen
+        enabled: backend.openEpisodeId === 0 && !addOpen && !confirmAll && !confirmLibrary && !confirmRemove && !nowPlayingOpen
         onActivated: {
             if (backend.openShowId !== 0) {
                 var page = win.activeShow()
@@ -253,7 +256,7 @@ ApplicationWindow {
     Shortcut {
         sequence: StandardKey.ZoomOut
         context: Qt.ApplicationShortcut
-        enabled: backend.openEpisodeId === 0 && !addOpen && !confirmAll && !confirmRemove && !nowPlayingOpen
+        enabled: backend.openEpisodeId === 0 && !addOpen && !confirmAll && !confirmLibrary && !confirmRemove && !nowPlayingOpen
         onActivated: {
             if (backend.openShowId !== 0) {
                 var page = win.activeShow()
@@ -288,7 +291,7 @@ ApplicationWindow {
                     feedField.forceActiveFocus()
                 }
                 onImportRequested: opmlDialog.open()
-                onMarkAllRequested: win.confirmAll = true
+                onMarkLibraryRequested: win.confirmLibrary = true
             }
 
             // One episode page per visited show. Back only hides it, so the
@@ -341,7 +344,7 @@ ApplicationWindow {
 
     Rectangle {
         anchors.fill: parent
-        visible: addOpen || confirmAll || confirmRemove
+        visible: addOpen || confirmAll || confirmLibrary || confirmRemove
         color: Qt.rgba(0, 0, 0, 0.45)
 
         MouseArea {
@@ -349,6 +352,7 @@ ApplicationWindow {
             onClicked: {
                 addOpen = false
                 confirmAll = false
+                confirmLibrary = false
                 confirmRemove = false
             }
         }
@@ -421,9 +425,11 @@ ApplicationWindow {
                     font.weight: Font.Normal
                     text: confirmRemove
                           ? "Remove " + backend.openShowTitle + "? Playback history for this show goes with it."
-                          : "Mark every episode of " + (backend.playerShowId !== 0 && backend.openShowId === 0
-                                                        ? backend.playerShowTitle : backend.openShowTitle)
-                            + " as played?"
+                          : confirmLibrary
+                            ? "Mark every episode of every podcast as played?"
+                            : "Mark every episode of " + (backend.playerShowId !== 0 && backend.openShowId === 0
+                                                          ? backend.playerShowTitle : backend.openShowTitle)
+                              + " as played?"
                 }
                 Row {
                     spacing: 8
@@ -432,9 +438,12 @@ ApplicationWindow {
                         onClicked: {
                             if (confirmRemove)
                                 backend.removeOpenShow()
+                            else if (confirmLibrary)
+                                backend.markLibraryPlayed()
                             else
                                 backend.markAllPlayed(backend.openShowId !== 0 ? backend.openShowId : backend.playerShowId)
                             confirmAll = false
+                            confirmLibrary = false
                             confirmRemove = false
                         }
                     }
@@ -442,6 +451,7 @@ ApplicationWindow {
                         label: "Cancel"
                         onClicked: {
                             confirmAll = false
+                            confirmLibrary = false
                             confirmRemove = false
                         }
                     }

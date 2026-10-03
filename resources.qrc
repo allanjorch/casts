@@ -14,5 +14,7 @@
         <file alias="AppMenuItem.qml">qml/AppMenuItem.qml</file>
         <file alias="AppMenuSeparator.qml">qml/AppMenuSeparator.qml</file>
         <file alias="AppTip.qml">qml/AppTip.qml</file>
+        <file alias="FastWheel.qml">qml/FastWheel.qml</file>
+        <file alias="QuietScroll.qml">qml/QuietScroll.qml</file>
     </qresource>
 </RCC>

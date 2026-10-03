@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 
 Item {
     id: page
@@ -276,7 +275,7 @@ Item {
         contentHeight: body.implicitHeight + 48 * theme.textScale
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        FastWheel { }
 
         Column {
             id: body
@@ -386,6 +385,14 @@ Item {
                 wrapMode: Text.Wrap
             }
         }
+    }
+
+    QuietScroll {
+        view: scroller
+        anchors.top: scroller.top
+        anchors.bottom: scroller.bottom
+        anchors.right: parent.right
+        anchors.rightMargin: 2
     }
 
     AppMenu {

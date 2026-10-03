@@ -901,7 +901,7 @@ void Backend::setShelfView(const QString &view)
 
 void Backend::setShelfColumns(int columns)
 {
-    const int next = qBound(2, columns, 8);
+    const int next = qBound(1, columns, 10);
     if (next == m_library.shelfColumns())
         return;
     m_library.setShelfColumns(next);
@@ -985,6 +985,17 @@ void Backend::markAllPlayed(qint64 showId)
     const int count = m_library.markAllPlayed(showId);
     reloadEpisodes();
     reloadShows();
+    setStatus(countMessage(count, QStringLiteral("episode")));
+}
+
+void Backend::markLibraryPlayed()
+{
+    const int count = m_library.markLibraryPlayed();
+    const auto showIds = m_episodeModels.keys();
+    for (qint64 showId : showIds)
+        syncEpisodeModel(showId);
+    reloadShows();
+    refreshOpenEpisode();
     setStatus(countMessage(count, QStringLiteral("episode")));
 }
 

@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 
 Item {
     id: page
@@ -42,13 +41,14 @@ Item {
     }
 
     Flickable {
+        id: scroller
         anchors.fill: parent
         contentWidth: width
         // Include top/bottom pads so scrolling reaches scrubber fully above PlayerBar.
         contentHeight: Math.max(height, body.topPad + body.implicitHeight + body.bottomPad)
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        FastWheel { }
 
         Column {
             id: body
@@ -343,5 +343,13 @@ Item {
                 opacity: 0.9
             }
         }
+    }
+
+    QuietScroll {
+        view: scroller
+        anchors.top: scroller.top
+        anchors.bottom: scroller.bottom
+        anchors.right: parent.right
+        anchors.rightMargin: 2
     }
 }

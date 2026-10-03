@@ -124,6 +124,7 @@ public:
     Q_INVOKABLE void setEpisodeShowAll(bool showAll);
     Q_INVOKABLE void markPlayed(qint64 episodeId, bool played);
     Q_INVOKABLE void markAllPlayed(qint64 showId);
+    Q_INVOKABLE void markLibraryPlayed();
     Q_INVOKABLE void markOlderPlayed(qint64 episodeId);
     Q_INVOKABLE void markNewerPlayed(qint64 episodeId);
 

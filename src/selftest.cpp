@@ -240,11 +240,15 @@ int runSelfTest(int argc, char **argv)
         check(library.shelfView() == QStringLiteral("gallery"), "shelf starts as gallery");
         check(library.shelfColumns() == 5, "shelf starts at five columns");
         library.setShelfView(QStringLiteral("list"));
-        library.setShelfColumns(1);
+        library.setShelfColumns(0);
         check(library.shelfView() == QStringLiteral("list"), "shelf list");
-        check(library.shelfColumns() == 2, "columns stay at least two");
+        check(library.shelfColumns() == 1, "columns stay at least one");
+        library.setShelfColumns(1);
+        check(library.shelfColumns() == 1, "one column is allowed");
         library.setShelfColumns(20);
-        check(library.shelfColumns() == 8, "columns stay at most eight");
+        check(library.shelfColumns() == 10, "columns stay at most ten");
+        library.setShelfColumns(10);
+        check(library.shelfColumns() == 10, "ten columns is allowed");
         check(library.shelfListSize() == 0, "list cover starts at the smallest");
         library.setShelfListSize(-3);
         check(library.shelfListSize() == 0, "list cover stays at least the smallest");
@@ -265,6 +269,21 @@ int runSelfTest(int argc, char **argv)
         library.setEpisodeShowAll(true);
         check(library.shelfShowAll(), "shelf eye reopens");
         check(library.episodeShowAll(), "episode eye reopens");
+        int unplayed = 0;
+        for (const auto &show : library.shows()) {
+            for (const auto &episode : library.episodes(show.id)) {
+                if (!episode.played)
+                    ++unplayed;
+            }
+        }
+        check(unplayed > 0, "library still has unplayed episodes");
+        check(library.markLibraryPlayed() == unplayed, "mark every show and episode played");
+        for (const auto &show : library.shows()) {
+            check(show.unheard == 0, "show is caught up after library mark");
+            for (const auto &episode : library.episodes(show.id))
+                check(episode.played, "episode is played after library mark");
+        }
+        check(library.markLibraryPlayed() == 0, "mark library again finds nothing left");
     }
 
     {

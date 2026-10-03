@@ -5,15 +5,13 @@ Item {
     id: shelf
     signal addRequested()
     signal importRequested()
-    signal markAllRequested()
-
-    property bool markedPlayed: false
+    signal markLibraryRequested()
 
     readonly property int columnFloor: 112
     readonly property real galleryGap: 12
     readonly property real galleryWidth: Math.max(1, width - 32)
     readonly property int columnsFit: Math.max(1, Math.floor((galleryWidth + galleryGap) / (columnFloor + galleryGap)))
-    readonly property int columns: Math.max(1, Math.min(backend.shelfColumns, columnsFit))
+    readonly property int columns: Math.max(1, Math.min(10, Math.min(backend.shelfColumns, columnsFit)))
     readonly property real cellWidth: galleryWidth / columns
     readonly property real coverSize: Math.max(columnFloor, cellWidth - galleryGap)
     readonly property real cellHeight: coverSize + theme.titleSize * 2.4 + 22
@@ -38,7 +36,7 @@ Item {
     function zoomOut() {
         if (backend.shelfView === "list")
             backend.setShelfListSize(backend.shelfListSize - 1)
-        else if (backend.shelfColumns < 8)
+        else if (backend.shelfColumns < 10)
             backend.setShelfColumns(backend.shelfColumns + 1)
     }
 
@@ -140,13 +138,10 @@ Item {
             }
             IconButton {
                 icon.name: "check-plain-symbolic"
-                enabled: !backend.busy && backend.playerEpisodeId !== 0
+                enabled: !backend.busy && grid.count > 0
                 tip: backend.busy ? "Refreshing…"
-                     : (enabled ? "Mark" : "Play an episode to mark it")
-                onClicked: {
-                    shelf.markedPlayed = backend.playerPlayed
-                    markMenu.popup()
-                }
+                     : (grid.count > 0 ? "Mark all as played" : "Nothing to mark")
+                onClicked: shelf.markLibraryRequested()
             }
             IconButton {
                 icon.name: backend.shelfShowAll ? "view-reveal-symbolic" : "view-conceal-symbolic"
@@ -201,6 +196,7 @@ Item {
         cellWidth: shelf.cellWidth
         cellHeight: shelf.cellHeight
         boundsBehavior: Flickable.StopAtBounds
+        FastWheel { }
         model: backend.shows
         cacheBuffer: height
 
@@ -313,6 +309,7 @@ Item {
         topMargin: 4
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        FastWheel { }
         model: backend.shows
         cacheBuffer: height
         spacing: 2
@@ -426,6 +423,23 @@ Item {
         }
     }
 
+    QuietScroll {
+        view: grid
+        loadedCount: grid.count
+        anchors.top: grid.top
+        anchors.bottom: grid.bottom
+        anchors.right: parent.right
+        anchors.rightMargin: 2
+    }
+    QuietScroll {
+        view: showList
+        loadedCount: showList.count
+        anchors.top: showList.top
+        anchors.bottom: showList.bottom
+        anchors.right: parent.right
+        anchors.rightMargin: 2
+    }
+
     function inkOnAccent(swatch) {
         var accentLuma = 0.299 * swatch.r + 0.587 * swatch.g + 0.114 * swatch.b
         var backgroundLuma = 0.299 * theme.background.r + 0.587 * theme.background.g + 0.114 * theme.background.b
@@ -434,31 +448,4 @@ Item {
                 ? theme.background : theme.foreground
     }
 
-    AppMenu {
-        id: markMenu
-        AppMenuItem {
-            text: "Mark as played"
-            enabled: !shelf.markedPlayed
-            onTriggered: backend.markPlayed(backend.playerEpisodeId, true)
-        }
-        AppMenuItem {
-            text: "Mark as unplayed"
-            enabled: shelf.markedPlayed
-            onTriggered: backend.markPlayed(backend.playerEpisodeId, false)
-        }
-        AppMenuSeparator {}
-        AppMenuItem {
-            text: "Mark older as played"
-            onTriggered: backend.markOlderPlayed(backend.playerEpisodeId)
-        }
-        AppMenuItem {
-            text: "Mark newer as played"
-            onTriggered: backend.markNewerPlayed(backend.playerEpisodeId)
-        }
-        AppMenuSeparator {}
-        AppMenuItem {
-            text: "Mark all as played"
-            onTriggered: shelf.markAllRequested()
-        }
-    }
 }

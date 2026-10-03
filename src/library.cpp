@@ -421,6 +421,14 @@ int Library::markAllPlayed(qint64 showId)
     return q.numRowsAffected();
 }
 
+int Library::markLibraryPlayed()
+{
+    QSqlQuery q(dbOf(m_connection));
+    if (!q.exec(QStringLiteral("UPDATE episodes SET played = 1 WHERE played = 0")))
+        return 0;
+    return q.numRowsAffected();
+}
+
 int Library::markOlderPlayed(qint64 episodeId)
 {
     QSqlQuery q(dbOf(m_connection));
@@ -571,12 +579,12 @@ int Library::shelfColumns() const
     const int value = setting(QStringLiteral("shelf.columns"), QStringLiteral("5")).toInt(&ok);
     if (!ok)
         return 5;
-    return qBound(2, value, 8);
+    return qBound(1, value, 10);
 }
 
 void Library::setShelfColumns(int columns)
 {
-    setSetting(QStringLiteral("shelf.columns"), QString::number(qBound(2, columns, 8)));
+    setSetting(QStringLiteral("shelf.columns"), QString::number(qBound(1, columns, 10)));
 }
 
 int Library::shelfListSize() const
