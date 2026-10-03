@@ -858,6 +858,27 @@ void PlayerService::SeekTo(double seconds)
     if (m_episode.id == 0)
         return;
     const qint64 ms = qMax<qint64>(0, static_cast<qint64>(seconds * 1000));
+    // Load is still filling the head buffer. setPosition would be ignored and the
+    // saved resume would win. Park this target on the resume path so kickoff
+    // seeks here, then starts playback (episode-detail timestamps).
+    if (!m_sourceBound) {
+        m_resumeMs = static_cast<int>(ms);
+        m_resumeGuardMs = static_cast<int>(ms);
+        m_positionMs = ms;
+        m_lastSavedMs = ms;
+        if (ms > 0) {
+            m_resumePending = true;
+            m_resumeGuardingSince.restart();
+            armResumeWatch();
+        } else {
+            m_resumeGuardingSince.invalidate();
+            clearResumeWatch();
+        }
+        savePosition();
+        noteSeek(ms);
+        publish();
+        return;
+    }
     m_resumeMs = 0;
     m_resumeGuardMs = 0;
     m_resumeGuardingSince.invalidate();
