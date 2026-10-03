@@ -9,30 +9,7 @@ Rectangle {
     implicitHeight: 96 * theme.textScale
     height: implicitHeight
 
-    property bool dragging: false
-    property real dragFraction: 0
     property var markedPlayed: false
-
-    function shownFraction() {
-        if (dragging)
-            return dragFraction
-        if (backend.playerDuration <= 0)
-            return 0
-        return Math.max(0, Math.min(1, backend.playerPosition / backend.playerDuration))
-    }
-
-    function clock(seconds) {
-        if (!seconds || seconds < 0)
-            return "0:00"
-        var total = Math.floor(seconds)
-        var hours = Math.floor(total / 3600)
-        var minutes = Math.floor((total % 3600) / 60)
-        var remain = total % 60
-        function pad(value) { return value < 10 ? "0" + value : "" + value }
-        if (hours > 0)
-            return hours + ":" + pad(minutes) + ":" + pad(remain)
-        return minutes + ":" + pad(remain)
-    }
 
     function rateLabel(value) {
         var rounded = Math.round(value * 10) / 10
@@ -198,46 +175,20 @@ Rectangle {
                 width: parent.width
                 spacing: 8
                 Text {
-                    text: clock(dragging ? dragFraction * backend.playerDuration : backend.playerPosition)
+                    text: scrubber.elapsedText
                     color: theme.dim
                     font.pixelSize: theme.caption
                     font.weight: Font.Normal
                     width: 48 * theme.textScale
                 }
-                Rectangle {
-                    id: track
+                Scrubber {
+                    id: scrubber
                     width: parent.width - 110 * theme.textScale
-                    height: 6
-                    radius: 3
                     anchors.verticalCenter: parent.verticalCenter
-                    color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)
-                    Rectangle {
-                        width: parent.width * bar.shownFraction()
-                        height: parent.height
-                        radius: 3
-                        color: theme.accent
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        anchors.margins: -8
-                        enabled: !backend.busy
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onPressed: function(mouse) {
-                            bar.dragging = true
-                            bar.dragFraction = Math.max(0, Math.min(1, mouse.x / track.width))
-                        }
-                        onPositionChanged: function(mouse) {
-                            if (bar.dragging)
-                                bar.dragFraction = Math.max(0, Math.min(1, mouse.x / track.width))
-                        }
-                        onReleased: {
-                            backend.seekTo(bar.dragFraction * backend.playerDuration)
-                            bar.dragging = false
-                        }
-                    }
+                    interactive: !backend.busy
                 }
                 Text {
-                    text: clock(backend.playerDuration)
+                    text: scrubber.durationText
                     color: theme.dim
                     font.pixelSize: theme.caption
                     font.weight: Font.Normal

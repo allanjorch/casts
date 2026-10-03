@@ -5,34 +5,10 @@ Item {
     id: page
     signal dismissRequested()
 
-    property bool dragging: false
-    property real dragFraction: 0
-
     // Very short pane: horizontal art + titles, keep transport/scrubber, hide blurb.
     // Full stacked cover layout when page.height is at or above this.
     readonly property real compactThreshold: 320 * theme.textScale
     readonly property bool compact: height < compactThreshold
-
-    function shownFraction() {
-        if (dragging)
-            return dragFraction
-        if (backend.playerDuration <= 0)
-            return 0
-        return Math.max(0, Math.min(1, backend.playerPosition / backend.playerDuration))
-    }
-
-    function clock(seconds) {
-        if (!seconds || seconds < 0)
-            return "0:00"
-        var total = Math.floor(seconds)
-        var hours = Math.floor(total / 3600)
-        var minutes = Math.floor((total % 3600) / 60)
-        var remain = total % 60
-        function pad(value) { return value < 10 ? "0" + value : "" + value }
-        if (hours > 0)
-            return hours + ":" + pad(minutes) + ":" + pad(remain)
-        return minutes + ":" + pad(remain)
-    }
 
     function rateLabel(value) {
         var rounded = Math.round(value * 10) / 10
@@ -286,9 +262,7 @@ Item {
                     spacing: page.compact ? 6 : 10
                     Text {
                         id: elapsedLabel
-                        text: page.clock(page.dragging
-                                         ? page.dragFraction * backend.playerDuration
-                                         : backend.playerPosition)
+                        text: scrubber.elapsedText
                         color: theme.dim
                         font.pixelSize: theme.caption
                         font.weight: Font.Normal
@@ -296,44 +270,18 @@ Item {
                         width: 52 * theme.textScale
                         anchors.verticalCenter: parent.verticalCenter
                     }
-                    Rectangle {
-                        id: track
+                    Scrubber {
+                        id: scrubber
                         width: parent.width
                                - elapsedLabel.width
                                - remainLabel.implicitWidth
                                - rateChip.width
                                - parent.spacing * 3
-                        height: 6
-                        radius: 3
                         anchors.verticalCenter: parent.verticalCenter
-                        color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)
-                        Rectangle {
-                            width: parent.width * page.shownFraction()
-                            height: parent.height
-                            radius: 3
-                            color: theme.accent
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            anchors.margins: -10
-                            cursorShape: Qt.PointingHandCursor
-                            onPressed: function(mouse) {
-                                page.dragging = true
-                                page.dragFraction = Math.max(0, Math.min(1, mouse.x / track.width))
-                            }
-                            onPositionChanged: function(mouse) {
-                                if (page.dragging)
-                                    page.dragFraction = Math.max(0, Math.min(1, mouse.x / track.width))
-                            }
-                            onReleased: {
-                                backend.seekTo(page.dragFraction * backend.playerDuration)
-                                page.dragging = false
-                            }
-                        }
                     }
                     Text {
                         id: remainLabel
-                        text: page.clock(backend.playerDuration)
+                        text: scrubber.durationText
                         color: theme.dim
                         font.pixelSize: theme.caption
                         font.weight: Font.Normal

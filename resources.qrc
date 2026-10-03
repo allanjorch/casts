@@ -6,6 +6,7 @@
         <file alias="ShowView.qml">qml/ShowView.qml</file>
         <file alias="EpisodeView.qml">qml/EpisodeView.qml</file>
         <file alias="PlayerBar.qml">qml/PlayerBar.qml</file>
+        <file alias="Scrubber.qml">qml/Scrubber.qml</file>
         <file alias="NowPlaying.qml">qml/NowPlaying.qml</file>
         <file alias="IconButton.qml">qml/IconButton.qml</file>
         <file alias="StatusNote.qml">qml/StatusNote.qml</file>
