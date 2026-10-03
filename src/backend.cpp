@@ -16,6 +16,7 @@
 #include <QNetworkReply>
 #include <QProcess>
 #include <QCoreApplication>
+#include <QGuiApplication>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTimer>
@@ -40,6 +41,18 @@ QString coverExtension(const QByteArray &bytes, const QString &contentType)
     if (bytes.startsWith("RIFF") || contentType.contains(QStringLiteral("webp")))
         return QStringLiteral("webp");
     return QStringLiteral("jpg");
+}
+
+// fresh picks a new filename so Qt Quick's file-url pixmap cache cannot keep the old art.
+QString cachedCoverPath(const QString &dir, qint64 id, const QString &ext, bool fresh)
+{
+    if (!fresh)
+        return QStringLiteral("%1/%2.%3").arg(dir).arg(id).arg(ext);
+    return QStringLiteral("%1/%2-%3.%4")
+        .arg(dir)
+        .arg(id)
+        .arg(QDateTime::currentMSecsSinceEpoch())
+        .arg(ext);
 }
 
 QString episodeCoverUrl(const EpisodeRow &row)
@@ -241,20 +254,32 @@ void Backend::importOpml(const QString &fileUrl)
     enqueue(urls);
 }
 
-void Backend::refreshAll()
+bool Backend::controlHeld() const
+{
+    return QGuiApplication::queryKeyboardModifiers().testFlag(Qt::ControlModifier);
+}
+
+void Backend::refreshAll(bool forceArtwork)
 {
     const QStringList urls = m_library.feedUrls();
     if (urls.isEmpty())
         return;
+    if (forceArtwork) {
+        const auto rows = m_library.shows();
+        for (const auto &row : rows)
+            reloadArtwork(row.id);
+    }
     m_shelfRefresh = true;
     m_shelfRefreshHadError = false;
     enqueue(urls);
 }
 
-void Backend::refreshOpenShow()
+void Backend::refreshOpenShow(bool forceArtwork)
 {
     if (m_openShowId == 0)
         return;
+    if (forceArtwork)
+        reloadArtwork(m_openShowId);
     const auto rows = m_library.shows();
     for (const auto &row : rows) {
         if (row.id == m_openShowId) {
@@ -462,12 +487,22 @@ void Backend::fetchNext()
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QStringLiteral("podcast/0.1 (Omarchy; +https://github.com/allanjorch)"));
     request.setTransferTimeout(20000);
+    if (job.plainEncoding)
+        request.setRawHeader("Accept-Encoding", "identity");
     QNetworkReply *reply = m_network.get(request);
     m_active = reply;
     connect(reply, &QNetworkReply::finished, this, [this, reply, job]() {
         reply->deleteLater();
         m_active = nullptr;
         if (reply->error() != QNetworkReply::NoError) {
+            // Not a feed failure. Retry once uncompressed so one bad gzip
+            // cannot keep the launch-refresh timestamp from ever advancing.
+            if (!job.plainEncoding
+                && reply->errorString().startsWith(QStringLiteral("Decompression failed"))) {
+                m_queue.prepend(Job{job.url, true});
+                fetchNext();
+                return;
+            }
             if (m_shelfRefresh)
                 m_shelfRefreshHadError = true;
             setStatus(reply->errorString());
@@ -516,28 +551,49 @@ void Backend::downloadCover(qint64 showId, const QString &imageUrl)
 {
     if (showId == 0 || imageUrl.isEmpty())
         return;
+    const bool fresh = m_freshShowCovers.contains(showId);
     // Skip when the library already points at a file on disk (refresh must not re-hit the CDN).
     // upsertShow clears image_path when the remote URL changes, so a new cover still downloads.
-    const QString existing = m_library.showImage(showId);
-    if (!existing.isEmpty() && QFileInfo::exists(existing))
-        return;
+    // fresh is Ctrl+click force-reload: the file was deleted and must be fetched again.
+    if (!fresh) {
+        const QString existing = m_library.showImage(showId);
+        if (!existing.isEmpty() && QFileInfo::exists(existing))
+            return;
+    }
     if (m_showCoverDownloads.contains(showId))
         return;
+    const int gen = m_showCoverGen.value(showId);
     m_showCoverDownloads.insert(showId);
     QNetworkRequest request{QUrl(imageUrl)};
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QStringLiteral("podcast/0.1 (Omarchy)"));
     request.setTransferTimeout(20000);
     QNetworkReply *reply = m_network.get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, showId, imageUrl]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, showId, imageUrl, gen, fresh]() {
         reply->deleteLater();
-        if (reply->error() != QNetworkReply::NoError) {
+        auto finish = [this, showId, gen]() {
+            if (m_showCoverGen.value(showId) != gen)
+                return;
             m_showCoverDownloads.remove(showId);
+        };
+        if (m_showCoverGen.value(showId) != gen) {
+            reply->readAll();
+            return;
+        }
+        if (reply->error() != QNetworkReply::NoError) {
+            finish();
             return;
         }
         const QByteArray bytes = reply->readAll();
         if (bytes.size() < 32) {
-            m_showCoverDownloads.remove(showId);
+            finish();
+            return;
+        }
+        const QString currentUrl = m_library.showImageUrl(showId);
+        if (currentUrl != imageUrl) {
+            finish();
+            if (!currentUrl.isEmpty())
+                downloadCover(showId, currentUrl);
             return;
         }
         const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
@@ -545,19 +601,29 @@ void Backend::downloadCover(qint64 showId, const QString &imageUrl)
         QDir().mkpath(dir);
         const QString ext = coverExtension(
             bytes, reply->header(QNetworkRequest::ContentTypeHeader).toString());
-        const QString path = QStringLiteral("%1/%2.%3").arg(dir).arg(showId).arg(ext);
+        const QString path = cachedCoverPath(dir, showId, ext, fresh);
         QFile file(path);
         if (!file.open(QIODevice::WriteOnly)) {
-            m_showCoverDownloads.remove(showId);
+            finish();
             return;
         }
         file.write(bytes);
         file.close();
+        if (m_showCoverGen.value(showId) != gen) {
+            QFile::remove(path);
+            return;
+        }
+        const QString previous = m_library.showImage(showId);
+        if (!previous.isEmpty() && previous != path)
+            QFile::remove(previous);
         m_library.setShowImage(showId, imageUrl, path);
-        m_showCoverDownloads.remove(showId);
+        m_freshShowCovers.remove(showId);
+        finish();
         reloadShows();
         if (m_openShowId == showId)
             reloadEpisodes();
+        if (m_playerShowId == showId)
+            refreshPlayerArt();
     });
 }
 
@@ -591,6 +657,7 @@ void Backend::enqueueEpisodeCover(qint64 episodeId, const QString &imageUrl, boo
 {
     if (episodeId == 0 || imageUrl.isEmpty())
         return;
+    const bool fresh = m_freshEpisodeCovers.contains(episodeId);
     if (m_episodeCoverDownloads.contains(episodeId))
         return;
     if (m_episodeCoverQueued.contains(episodeId)) {
@@ -598,18 +665,32 @@ void Backend::enqueueEpisodeCover(qint64 episodeId, const QString &imageUrl, boo
             if (m_episodeCoverQueue.at(i).episodeId != episodeId)
                 continue;
             m_episodeCoverQueue[i].imageUrl = imageUrl;
+            if (fresh)
+                m_episodeCoverQueue[i].freshFile = true;
             if (front && i != 0)
                 m_episodeCoverQueue.move(i, 0);
             return;
         }
     }
     m_episodeCoverQueued.insert(episodeId);
-    const EpisodeCoverJob job{episodeId, imageUrl};
+    const EpisodeCoverJob job{episodeId, imageUrl, fresh};
     if (front)
         m_episodeCoverQueue.prepend(job);
     else
         m_episodeCoverQueue.append(job);
     pumpEpisodeCovers();
+}
+
+void Backend::dropQueuedEpisodeCover(qint64 episodeId)
+{
+    if (!m_episodeCoverQueued.remove(episodeId))
+        return;
+    for (int i = 0; i < m_episodeCoverQueue.size(); ++i) {
+        if (m_episodeCoverQueue.at(i).episodeId != episodeId)
+            continue;
+        m_episodeCoverQueue.removeAt(i);
+        break;
+    }
 }
 
 void Backend::pumpEpisodeCovers()
@@ -621,41 +702,56 @@ void Backend::pumpEpisodeCovers()
         const EpisodeRow row = m_library.episode(job.episodeId);
         if (row.id == 0)
             continue;
+        const bool fresh = job.freshFile || m_freshEpisodeCovers.contains(job.episodeId);
         if (row.imageUrl != job.imageUrl) {
             // Queue was holding a URL the feed has since replaced.
             if (!row.imageUrl.isEmpty()
-                && (row.imagePath.isEmpty() || !QFileInfo::exists(row.imagePath))
+                && (fresh || row.imagePath.isEmpty() || !QFileInfo::exists(row.imagePath))
                 && !m_episodeCoverDownloads.contains(row.id)
                 && !m_episodeCoverQueued.contains(row.id)) {
                 m_episodeCoverQueued.insert(row.id);
-                m_episodeCoverQueue.prepend(EpisodeCoverJob{row.id, row.imageUrl});
+                m_episodeCoverQueue.prepend(
+                    EpisodeCoverJob{row.id, row.imageUrl, fresh || m_freshEpisodeCovers.contains(row.id)});
             }
             continue;
         }
-        if (!row.imagePath.isEmpty() && QFileInfo::exists(row.imagePath))
+        if (fresh) {
+            if (!row.imagePath.isEmpty()) {
+                QFile::remove(row.imagePath);
+                m_library.clearEpisodeImagePath(job.episodeId);
+            }
+        } else if (!row.imagePath.isEmpty() && QFileInfo::exists(row.imagePath)) {
             continue;
-        startEpisodeCoverDownload(job.episodeId, job.imageUrl);
+        }
+        startEpisodeCoverDownload(job.episodeId, job.imageUrl, fresh);
     }
 }
 
-void Backend::startEpisodeCoverDownload(qint64 episodeId, const QString &imageUrl)
+void Backend::startEpisodeCoverDownload(qint64 episodeId, const QString &imageUrl, bool freshFile)
 {
     if (episodeId == 0 || imageUrl.isEmpty())
         return;
     if (m_episodeCoverDownloads.contains(episodeId))
         return;
+    const int gen = m_episodeCoverGen.value(episodeId);
     m_episodeCoverDownloads.insert(episodeId);
     QNetworkRequest request{QUrl(imageUrl)};
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QStringLiteral("podcast/0.1 (Omarchy)"));
     request.setTransferTimeout(20000);
     QNetworkReply *reply = m_network.get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, episodeId, imageUrl]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, episodeId, imageUrl, gen, freshFile]() {
         reply->deleteLater();
-        auto done = [this, episodeId]() {
+        auto done = [this, episodeId, gen]() {
+            if (m_episodeCoverGen.value(episodeId) != gen)
+                return;
             m_episodeCoverDownloads.remove(episodeId);
             pumpEpisodeCovers();
         };
+        if (m_episodeCoverGen.value(episodeId) != gen) {
+            reply->readAll();
+            return;
+        }
         if (reply->error() != QNetworkReply::NoError) {
             done();
             return;
@@ -670,7 +766,7 @@ void Backend::startEpisodeCoverDownload(qint64 episodeId, const QString &imageUr
         QDir().mkpath(dir);
         const QString ext = coverExtension(
             bytes, reply->header(QNetworkRequest::ContentTypeHeader).toString());
-        const QString path = QStringLiteral("%1/%2.%3").arg(dir).arg(episodeId).arg(ext);
+        const QString path = cachedCoverPath(dir, episodeId, ext, freshFile);
         QFile file(path);
         if (!file.open(QIODevice::WriteOnly)) {
             done();
@@ -679,6 +775,11 @@ void Backend::startEpisodeCoverDownload(qint64 episodeId, const QString &imageUr
         file.write(bytes);
         file.close();
 
+        if (m_episodeCoverGen.value(episodeId) != gen) {
+            QFile::remove(path);
+            return;
+        }
+
         const EpisodeRow current = m_library.episode(episodeId);
         if (current.id == 0 || current.imageUrl != imageUrl) {
             // Feed changed while this was in flight. Don't keep the stale bytes.
@@ -686,34 +787,88 @@ void Backend::startEpisodeCoverDownload(qint64 episodeId, const QString &imageUr
                 QFile::remove(path);
             m_episodeCoverDownloads.remove(episodeId);
             if (current.id != 0 && !current.imageUrl.isEmpty()
-                && (current.imagePath.isEmpty() || !QFileInfo::exists(current.imagePath)))
+                && (m_freshEpisodeCovers.contains(episodeId)
+                    || current.imagePath.isEmpty() || !QFileInfo::exists(current.imagePath)))
                 enqueueEpisodeCover(current.id, current.imageUrl, false);
             else
                 pumpEpisodeCovers();
             return;
         }
 
+        const QString previous = current.imagePath;
+        if (!previous.isEmpty() && previous != path)
+            QFile::remove(previous);
         m_library.setEpisodeImage(episodeId, imageUrl, path);
+        m_freshEpisodeCovers.remove(episodeId);
         // Point any open list at the file now. A later visit reads it from the
         // library, so switching shows cannot force another download.
         for (EpisodeModel *model : std::as_const(m_episodeModels))
             model->setImagePath(episodeId, path);
         if (m_openEpisodeId == episodeId)
             refreshOpenEpisode();
-        if (m_playerEpisodeId == episodeId) {
-            m_playerArt = QUrl::fromLocalFile(path).toString();
-            emit playerStateChanged();
-            if (QDBusConnection::sessionBus().interface()
-                    ->isServiceRegistered(kPlayerService)) {
-                if (!m_player) {
-                    m_player = new QDBusInterface(kPlayerService, kPlayerPath, kPlayerIface,
-                                                  QDBusConnection::sessionBus(), this);
-                }
-                m_player->call(QDBus::Block, QStringLiteral("RefreshArt"));
-            }
-        }
+        if (m_playerEpisodeId == episodeId)
+            refreshPlayerArt();
         done();
     });
+}
+
+void Backend::reloadArtwork(qint64 showId)
+{
+    if (showId == 0)
+        return;
+    // Supersede in-flight cover replies so they cannot write the file we just deleted.
+    m_freshShowCovers.insert(showId);
+    m_showCoverGen[showId] = m_showCoverGen.value(showId) + 1;
+    m_showCoverDownloads.remove(showId);
+    m_library.clearShowImagePath(showId);
+
+    const auto episodes = m_library.episodes(showId);
+    for (const auto &row : episodes) {
+        if (row.imageUrl.isEmpty() && row.imagePath.isEmpty())
+            continue;
+        if (!row.imageUrl.isEmpty())
+            m_freshEpisodeCovers.insert(row.id);
+        m_episodeCoverGen[row.id] = m_episodeCoverGen.value(row.id) + 1;
+        m_episodeCoverDownloads.remove(row.id);
+        dropQueuedEpisodeCover(row.id);
+        m_library.clearEpisodeImagePath(row.id);
+    }
+
+    if (EpisodeModel *model = episodeModel(showId, false))
+        model->setRows(visibleEpisodes(showId));
+    reloadShows();
+
+    const QString imageUrl = m_library.showImageUrl(showId);
+    if (!imageUrl.isEmpty())
+        downloadCover(showId, imageUrl);
+    for (const auto &row : m_library.episodes(showId)) {
+        if (!row.imageUrl.isEmpty())
+            enqueueEpisodeCover(row.id, row.imageUrl, false);
+    }
+    if (m_playerShowId == showId)
+        refreshPlayerArt();
+}
+
+void Backend::refreshPlayerArt()
+{
+    if (m_playerEpisodeId == 0)
+        return;
+    const EpisodeRow row = m_library.episode(m_playerEpisodeId);
+    if (row.id == 0)
+        return;
+    const QString preferred = preferredPlayerArt(m_library, row);
+    if (preferred == m_playerArt)
+        return;
+    m_playerArt = preferred;
+    emit playerStateChanged();
+    auto *bus = QDBusConnection::sessionBus().interface();
+    if (!bus || !bus->isServiceRegistered(kPlayerService))
+        return;
+    if (!m_player) {
+        m_player = new QDBusInterface(kPlayerService, kPlayerPath, kPlayerIface,
+                                      QDBusConnection::sessionBus(), this);
+    }
+    m_player->call(QDBus::Block, QStringLiteral("RefreshArt"));
 }
 
 bool Backend::playerReady() const

@@ -226,6 +226,15 @@ QString Library::showImage(qint64 showId) const
     return q.next() ? q.value(0).toString() : QString();
 }
 
+QString Library::showImageUrl(qint64 showId) const
+{
+    QSqlQuery q(dbOf(m_connection));
+    q.prepare(QStringLiteral("SELECT image_url FROM shows WHERE id = ?"));
+    q.addBindValue(showId);
+    q.exec();
+    return q.next() ? q.value(0).toString() : QString();
+}
+
 qint64 Library::episodeByAudioUrl(const QString &audioUrl) const
 {
     QSqlQuery q(dbOf(m_connection));
@@ -389,6 +398,28 @@ void Library::setEpisodeImage(qint64 episodeId, const QString &imageUrl, const Q
     q.addBindValue(imagePath);
     q.addBindValue(episodeId);
     q.exec();
+}
+
+void Library::clearShowImagePath(qint64 showId)
+{
+    const QString path = showImage(showId);
+    QSqlQuery q(dbOf(m_connection));
+    q.prepare(QStringLiteral("UPDATE shows SET image_path = '' WHERE id = ?"));
+    q.addBindValue(showId);
+    q.exec();
+    if (!path.isEmpty())
+        QFile::remove(path);
+}
+
+void Library::clearEpisodeImagePath(qint64 episodeId)
+{
+    const QString path = episode(episodeId).imagePath;
+    QSqlQuery q(dbOf(m_connection));
+    q.prepare(QStringLiteral("UPDATE episodes SET image_path = '' WHERE id = ?"));
+    q.addBindValue(episodeId);
+    q.exec();
+    if (!path.isEmpty())
+        QFile::remove(path);
 }
 
 bool Library::removeShow(qint64 showId)

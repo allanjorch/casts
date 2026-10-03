@@ -63,11 +63,16 @@ public:
     EpisodeRow episode(qint64 id) const;
     QString showTitle(qint64 showId) const;
     QString showImage(qint64 showId) const;
+    QString showImageUrl(qint64 showId) const;
     qint64 episodeByAudioUrl(const QString &audioUrl) const;
 
     qint64 upsertShow(const QString &feedUrl, const ParsedShow &parsed);
     void setShowImage(qint64 showId, const QString &imageUrl, const QString &imagePath);
     void setEpisodeImage(qint64 episodeId, const QString &imageUrl, const QString &imagePath);
+    // Delete the cached file and clear image_path. The remote image URL stays,
+    // so a later download can run. A normal refresh does not call these.
+    void clearShowImagePath(qint64 showId);
+    void clearEpisodeImagePath(qint64 episodeId);
     bool removeShow(qint64 showId);
 
     int markPlayed(qint64 episodeId, bool played);

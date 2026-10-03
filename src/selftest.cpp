@@ -181,6 +181,39 @@ int runSelfTest(int argc, char **argv)
                 check(!QFileInfo::exists(epCover), "stale episode cover file removed");
                 library.upsertShow(QStringLiteral("https://example.com/feed.xml"), *parsed);
             }
+            {
+                // Force-reload contract: drop the file and image_path, keep the URL,
+                // and a same-URL upsert must not put the cached path back.
+                const QString coverPath = dir.filePath(QStringLiteral("cover-force.jpg"));
+                QFile cover(coverPath);
+                check(cover.open(QIODevice::WriteOnly) && cover.write("force-show-cover") > 0,
+                      "write show cover to force-clear");
+                cover.close();
+                library.setShowImage(showId, parsed->imageUrl, coverPath);
+                check(library.showImageUrl(showId) == parsed->imageUrl, "show image url stored");
+                library.clearShowImagePath(showId);
+                check(library.showImage(showId).isEmpty(), "force-clear drops show image_path");
+                check(library.showImageUrl(showId) == parsed->imageUrl, "force-clear keeps show image url");
+                check(!QFileInfo::exists(coverPath), "force-clear removes show cover file");
+                library.upsertShow(QStringLiteral("https://example.com/feed.xml"), *parsed);
+                check(library.showImage(showId).isEmpty(), "same cover URL stays empty after force-clear");
+
+                const qint64 epId = episodes.at(0).id;
+                const QString epCover = dir.filePath(QStringLiteral("ep-force.jpg"));
+                QFile epFile(epCover);
+                check(epFile.open(QIODevice::WriteOnly) && epFile.write("force-episode-cover") > 0,
+                      "write episode cover to force-clear");
+                epFile.close();
+                const QString epUrl = library.episode(epId).imageUrl;
+                library.setEpisodeImage(epId, epUrl, epCover);
+                library.clearEpisodeImagePath(epId);
+                check(library.episode(epId).imagePath.isEmpty(), "force-clear drops episode image_path");
+                check(library.episode(epId).imageUrl == epUrl, "force-clear keeps episode image url");
+                check(!QFileInfo::exists(epCover), "force-clear removes episode cover file");
+                library.upsertShow(QStringLiteral("https://example.com/feed.xml"), *parsed);
+                check(library.episode(epId).imagePath.isEmpty(),
+                      "same episode image URL stays empty after force-clear");
+            }
             const qint64 newest = episodes.at(0).id;
             const qint64 middle = episodes.at(1).id;
             const qint64 older = episodes.at(2).id;

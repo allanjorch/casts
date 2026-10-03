@@ -118,10 +118,15 @@ Item {
                 icon.name: "view-refresh-symbolic"
                 tip: backend.busy ? "Refreshing…"
                      : (backend.lastRefreshLabel.length
-                        ? ("Refresh — " + backend.lastRefreshLabel)
-                        : "Refresh")
+                        ? ("Refresh — " + backend.lastRefreshLabel + "  ·  Ctrl+click reloads artwork")
+                        : "Refresh  ·  Ctrl+click reloads artwork")
                 enabled: !backend.busy
-                onClicked: backend.refreshAll()
+                property bool reloadArtwork: false
+                onPressedChanged: {
+                    if (pressed)
+                        reloadArtwork = backend.controlHeld()
+                }
+                onClicked: backend.refreshAll(reloadArtwork)
 
                 RotationAnimator {
                     target: refreshButton

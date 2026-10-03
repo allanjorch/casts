@@ -99,8 +99,11 @@ public:
 
     Q_INVOKABLE void addFeed(const QString &url);
     Q_INVOKABLE void importOpml(const QString &fileUrl);
-    Q_INVOKABLE void refreshAll();
-    Q_INVOKABLE void refreshOpenShow();
+    // forceArtwork is Ctrl+left-click: drop cached show and episode covers and fetch them again.
+    // A normal refresh leaves this false and must not re-download art that is already on disk.
+    Q_INVOKABLE void refreshAll(bool forceArtwork = false);
+    Q_INVOKABLE void refreshOpenShow(bool forceArtwork = false);
+    Q_INVOKABLE bool controlHeld() const;
     Q_INVOKABLE void openShow(qint64 showId);
     Q_INVOKABLE void closeShow();
     // Stable per-show list. Kept after Back so the episode view is not rebuilt.
@@ -148,11 +151,15 @@ signals:
 private:
     struct Job {
         QString url;
+        // Megaphone (and others) sometimes send a gzip body Qt cannot inflate.
+        // One retry asks for identity so a full shelf refresh can still succeed.
+        bool plainEncoding = false;
     };
 
     struct EpisodeCoverJob {
         qint64 episodeId = 0;
         QString imageUrl;
+        bool freshFile = false;
     };
 
     void setStatus(const QString &status);
@@ -172,8 +179,11 @@ private:
     void downloadEpisodeCover(qint64 episodeId, const QString &imageUrl);
     void ensureEpisodeCovers(const QList<EpisodeRow> &rows);
     void enqueueEpisodeCover(qint64 episodeId, const QString &imageUrl, bool front);
+    void dropQueuedEpisodeCover(qint64 episodeId);
     void pumpEpisodeCovers();
-    void startEpisodeCoverDownload(qint64 episodeId, const QString &imageUrl);
+    void startEpisodeCoverDownload(qint64 episodeId, const QString &imageUrl, bool freshFile);
+    void reloadArtwork(qint64 showId);
+    void refreshPlayerArt();
     void refreshOpenEpisode();
     bool playerReady() const;
     void startPlayerService();
@@ -240,4 +250,11 @@ private:
     QSet<qint64> m_episodeCoverDownloads;
     QList<EpisodeCoverJob> m_episodeCoverQueue;
     QSet<qint64> m_episodeCoverQueued;
+    // Shows/episodes whose on-disk cover was just deleted and must be fetched again,
+    // even though a normal refresh would keep the cached file.
+    QSet<qint64> m_freshShowCovers;
+    QSet<qint64> m_freshEpisodeCovers;
+    // Bumped when a force-reload supersedes an in-flight download of the same id.
+    QHash<qint64, int> m_showCoverGen;
+    QHash<qint64, int> m_episodeCoverGen;
 };

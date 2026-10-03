@@ -45,7 +45,10 @@ QPixmap CoverImageProvider::requestPixmap(const QString &id, QSize *size, const 
 
     const int requestW = requestedSize.width() > 0 ? requestedSize.width() : 0;
     const int requestH = requestedSize.height() > 0 ? requestedSize.height() : 0;
-    const QString key = path + QLatin1Char('|') + QString::number(requestW)
+    // mtime so a rewritten file (force-reload) is not served from the old pixmap.
+    const qint64 stamp = QFileInfo(path).lastModified().toMSecsSinceEpoch();
+    const QString key = path + QLatin1Char('|') + QString::number(stamp)
+        + QLatin1Char('|') + QString::number(requestW)
         + QLatin1Char('x') + QString::number(requestH);
 
     QMutexLocker lock(&cacheMutex);

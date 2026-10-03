@@ -126,8 +126,13 @@ Item {
             }
             IconButton {
                 icon.name: "view-refresh-symbolic"
-                tip: "Refresh"
-                onClicked: backend.refreshOpenShow()
+                tip: "Refresh  ·  Ctrl+click reloads artwork"
+                property bool reloadArtwork: false
+                onPressedChanged: {
+                    if (pressed)
+                        reloadArtwork = backend.controlHeld()
+                }
+                onClicked: backend.refreshOpenShow(reloadArtwork)
             }
             IconButton {
                 icon.name: "list-remove-symbolic"
