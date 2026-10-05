@@ -55,6 +55,9 @@ class Backend : public QObject {
     Q_PROPERTY(int episodeListSize READ episodeListSize NOTIFY shelfLayoutChanged)
     Q_PROPERTY(bool shelfShowAll READ shelfShowAll NOTIFY filterChanged)
     Q_PROPERTY(bool episodeShowAll READ episodeShowAll NOTIFY filterChanged)
+    // Library size, not the eye-filtered shelf. Header chrome uses this so a
+    // caught-up filter cannot hide the eye that would bring shows back.
+    Q_PROPERTY(int showCount READ showCount NOTIFY showCountChanged)
 
 public:
     explicit Backend(Library &library, QObject *parent = nullptr);
@@ -96,6 +99,7 @@ public:
     int episodeListSize() const;
     bool shelfShowAll() const;
     bool episodeShowAll() const;
+    int showCount() const { return m_showCount; }
 
     Q_INVOKABLE void addFeed(const QString &url);
     Q_INVOKABLE void importOpml(const QString &fileUrl);
@@ -145,6 +149,7 @@ signals:
     void playerPositionChanged();
     void shelfLayoutChanged();
     void filterChanged();
+    void showCountChanged();
     void episodeModelDiscarded(qint64 showId);
     void raised();
 
@@ -168,7 +173,7 @@ private:
     void noteSuccessfulShelfRefresh();
     void reloadShows();
     void reloadEpisodes();
-    QList<ShowRow> visibleShows() const;
+    QList<ShowRow> visibleShows(const QList<ShowRow> &rows) const;
     QList<EpisodeRow> visibleEpisodes(qint64 showId) const;
     EpisodeModel *episodeModel(qint64 showId, bool create);
     void syncEpisodeModel(qint64 showId);
@@ -203,6 +208,7 @@ private:
     };
 
     Library &m_library;
+    int m_showCount = 0;
     ShowModel m_shows;
     EpisodeModel m_episodes;
     QHash<qint64, EpisodeModel *> m_episodeModels;

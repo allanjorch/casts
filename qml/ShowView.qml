@@ -120,11 +120,6 @@ Item {
                 onClicked: backend.setEpisodeShowAll(!backend.episodeShowAll)
             }
             IconButton {
-                icon.name: "check-plain-symbolic"
-                tip: "Mark all as played"
-                onClicked: page.markAllRequested()
-            }
-            IconButton {
                 icon.name: "view-refresh-symbolic"
                 tip: "Refresh  ·  Ctrl+click reloads artwork"
                 property bool reloadArtwork: false
@@ -133,6 +128,15 @@ Item {
                         reloadArtwork = backend.controlHeld()
                 }
                 onClicked: backend.refreshOpenShow(reloadArtwork)
+            }
+            Item {
+                width: 16
+                height: 1
+            }
+            IconButton {
+                icon.name: "check-plain-symbolic"
+                tip: "Mark all as played"
+                onClicked: page.markAllRequested()
             }
             IconButton {
                 icon.name: "list-remove-symbolic"

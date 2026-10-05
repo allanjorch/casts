@@ -101,20 +101,28 @@ Item {
             anchors.rightMargin: 28
             anchors.verticalCenter: parent.verticalCenter
             spacing: 4
+            // No podcasts yet: only Add and Import. The eye stays available once
+            // any show exists, even if the unplayed filter hides every cover.
+            readonly property bool hasShows: backend.showCount > 0
             IconButton {
-                icon.name: "list-add-symbolic"
-                tip: "Add feed"
+                visible: actions.hasShows
+                icon.name: backend.shelfShowAll ? "view-reveal-symbolic" : "view-conceal-symbolic"
+                tip: backend.busy ? "Refreshing…"
+                     : (backend.shelfShowAll ? "Show unplayed only" : "Show all")
                 enabled: !backend.busy
-                onClicked: shelf.addRequested()
+                onClicked: backend.setShelfShowAll(!backend.shelfShowAll)
             }
             IconButton {
-                icon.name: "document-open-symbolic"
-                tip: "Import OPML"
+                visible: actions.hasShows
+                icon.name: backend.shelfView === "list" ? "view-list-symbolic" : "view-grid-symbolic"
+                tip: backend.busy ? "Refreshing…"
+                     : (backend.shelfView === "list" ? "Show as gallery" : "Show as list")
                 enabled: !backend.busy
-                onClicked: shelf.importRequested()
+                onClicked: backend.setShelfView(backend.shelfView === "list" ? "gallery" : "list")
             }
             IconButton {
                 id: refreshButton
+                visible: actions.hasShows
                 icon.name: "view-refresh-symbolic"
                 tip: backend.busy ? "Refreshing…"
                      : (backend.lastRefreshLabel.length
@@ -134,14 +142,20 @@ Item {
                     to: 360
                     duration: 900
                     loops: Animation.Infinite
-                    running: backend.busy
+                    running: backend.busy && refreshButton.visible
                     onRunningChanged: {
                         if (!running)
                             refreshButton.rotation = 0
                     }
                 }
             }
+            Item {
+                visible: actions.hasShows
+                width: 16
+                height: 1
+            }
             IconButton {
+                visible: actions.hasShows
                 icon.name: "check-plain-symbolic"
                 enabled: !backend.busy && grid.count > 0
                 tip: backend.busy ? "Refreshing…"
@@ -149,18 +163,16 @@ Item {
                 onClicked: shelf.markLibraryRequested()
             }
             IconButton {
-                icon.name: backend.shelfShowAll ? "view-reveal-symbolic" : "view-conceal-symbolic"
-                tip: backend.busy ? "Refreshing…"
-                     : (backend.shelfShowAll ? "Show unplayed only" : "Show all")
+                icon.name: "list-add-symbolic"
+                tip: "Add feed"
                 enabled: !backend.busy
-                onClicked: backend.setShelfShowAll(!backend.shelfShowAll)
+                onClicked: shelf.addRequested()
             }
             IconButton {
-                icon.name: backend.shelfView === "list" ? "view-list-symbolic" : "view-grid-symbolic"
-                tip: backend.busy ? "Refreshing…"
-                     : (backend.shelfView === "list" ? "Show as gallery" : "Show as list")
+                icon.name: "document-open-symbolic"
+                tip: "Import OPML"
                 enabled: !backend.busy
-                onClicked: backend.setShelfView(backend.shelfView === "list" ? "gallery" : "list")
+                onClicked: shelf.importRequested()
             }
         }
         StatusNote {

@@ -112,9 +112,8 @@ void Backend::setBusy(bool busy)
     emit busyChanged();
 }
 
-QList<ShowRow> Backend::visibleShows() const
+QList<ShowRow> Backend::visibleShows(const QList<ShowRow> &rows) const
 {
-    const auto rows = m_library.shows();
     if (m_library.shelfShowAll())
         return rows;
     QList<ShowRow> filtered;
@@ -185,10 +184,14 @@ QObject *Backend::episodesFor(qint64 showId)
 
 void Backend::reloadShows()
 {
-    m_shows.setRows(visibleShows());
+    const QList<ShowRow> rows = m_library.shows();
+    if (rows.size() != m_showCount) {
+        m_showCount = rows.size();
+        emit showCountChanged();
+    }
+    m_shows.setRows(visibleShows(rows));
     if (m_openShowId != 0) {
         bool found = false;
-        const auto rows = m_library.shows();
         for (const auto &row : rows) {
             if (row.id == m_openShowId) {
                 m_openShowTitle = row.title;

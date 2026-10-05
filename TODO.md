@@ -14,7 +14,7 @@ Work **one item at a time**. Do not start the next until the current one is done
 8. [x] **Eye-toggle filter** — Independent Main vs Episodes; open = show all, closed = unplayed only; persist preferred setting.
 9. [ ] **Later discussion (do not implement yet)** — Central play/pause/seek services vs current Backend/D-Bus player. Decision: shared QML scrubber component, not a second service. The detached player over D-Bus stays the single play/pause/seek service.
 
-10. [ ] **Later discussion (do not implement yet)** — Consider order of top-right header actions on Main and Episodes for better UX (discuss/rearrange).
+10. [x] **Header action order** — Empty shelf: Add feed and Import OPML only. Once shows exist: Eye, gallery/list, Refresh, gap, Mark all played, Add, Import. Show page: Eye, Refresh, gap, Mark this show played, Remove.
 
 11. [x] **Last-refresh indicator / skip auto-refresh** — Indicate when last update/refresh ran; if within ~30 minutes of last refresh, skip automatic refresh on launch (manual refresh still allowed).
 
@@ -23,3 +23,4 @@ Work **one item at a time**. Do not start the next until the current one is done
 13. [x] Scrubber hover/drag time tooltip (shared component; bar + Player page).
 14. [x] **Faster mouse-wheel scroll** — About 2× wheel speed (FastWheel).
 15. [x] **Quiet scrollbar** — Minimal dynamic scrollbar (QuietScroll) on shelf and episode lists that tracks loaded content.
+16. [ ] **Scroll look and feel** — Revisit how scrolling looks to a person: motion, distance, and the thin scrollbar, not just that the wheel moves.
