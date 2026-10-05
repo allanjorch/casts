@@ -1,13 +1,13 @@
 import QtQuick
 
-Text {
+SelectableText {
     id: note
     property int holdMs: 3500
 
     text: backend.status
     color: theme.dim
-    font.weight: Font.Normal
-    elide: Text.ElideRight
+    wrapMode: TextEdit.NoWrap
+    clip: true
     opacity: 0
 
     Behavior on opacity {

@@ -25,9 +25,7 @@ Item {
     }
 
     function day(unix) {
-        if (!unix)
-            return ""
-        return Qt.formatDateTime(new Date(unix * 1000), "d MMM yyyy")
+        return backend.formatDay(unix)
     }
 
     function metaLine() {
@@ -40,8 +38,8 @@ Item {
         if (backend.openEpisodePlayed)
             parts.push("Played")
         else if (backend.openEpisodePositionMs > 5000)
-            parts.push("In progress")
-        return parts.join("  ·  ")
+            parts.push("In progress (" + page.clock(backend.openEpisodePositionMs / 1000) + ")")
+        return parts.join(" · ")
     }
 
     function escapeHtml(value) {
@@ -246,21 +244,21 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             anchors.leftMargin: 18
             anchors.rightMargin: 18
-            Text {
+            SelectableText {
                 width: parent.width
                 text: backend.openEpisodeTitle
                 color: theme.foreground
                 font.pixelSize: theme.heading
-                font.weight: Font.Normal
-                elide: Text.ElideRight
+                wrapMode: TextEdit.NoWrap
+                clip: true
             }
-            Text {
+            SelectableText {
                 width: parent.width
                 text: backend.openShowTitle
                 color: theme.dim
                 font.pixelSize: theme.caption
-                font.weight: Font.Normal
-                elide: Text.ElideRight
+                wrapMode: TextEdit.NoWrap
+                clip: true
             }
         }
     }
@@ -324,13 +322,12 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 10
 
-                    Text {
+                    SelectableText {
                         width: parent.width
                         text: page.metaLine()
                         color: theme.dim
                         font.pixelSize: theme.body
-                        font.weight: Font.Normal
-                        wrapMode: Text.Wrap
+                        wrapMode: TextEdit.Wrap
                     }
                     Rectangle {
                         visible: !backend.openEpisodePlayed
@@ -350,39 +347,28 @@ Item {
                 }
             }
 
-            Text {
+            SelectableText {
                 id: notes
                 width: parent.width
                 visible: backend.openEpisodeDescription.length > 0
-                text: page.linkify(backend.openEpisodeDescription, theme.foreground)
-                textFormat: Text.RichText
+                text: page.linkify(backend.openEpisodeDescription, theme.blue)
+                textFormat: TextEdit.RichText
                 color: theme.foreground
-                // RichText ignores linkColor. Each <a> has style color = theme.foreground.
+                // RichText ignores linkColor. Each <a> has style color = theme.blue (Omarchy blue / ls folder color).
                 font.family: "monospace"
                 font.pixelSize: theme.body
-                font.weight: Font.Normal
-                wrapMode: Text.Wrap
-                lineHeight: 1.35
+                wrapMode: TextEdit.Wrap
+                // TextEdit has no lineHeight; spacing stays readable via body size.
                 onLinkActivated: function (link) { page.openDescriptionLink(link) }
-                HoverHandler {
-                    cursorShape: notes.hoveredLink.length > 0
-                                 ? Qt.PointingHandCursor : Qt.ArrowCursor
-                }
-                TapHandler {
-                    acceptedButtons: Qt.RightButton
-                    onTapped: function (point) {
-                        page.copyWebLink(notes.linkAt(point.position.x, point.position.y))
-                    }
-                }
+                onLinkCopyRequested: function (link) { page.copyWebLink(link) }
             }
-            Text {
+            SelectableText {
                 width: parent.width
                 visible: backend.openEpisodeDescription.length === 0
                 text: "No description in the feed for this episode."
                 color: theme.dim
                 font.pixelSize: theme.body
-                font.weight: Font.Normal
-                wrapMode: Text.Wrap
+                wrapMode: TextEdit.Wrap
             }
         }
     }

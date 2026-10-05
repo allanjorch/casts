@@ -10,6 +10,7 @@
         <file alias="NowPlaying.qml">qml/NowPlaying.qml</file>
         <file alias="IconButton.qml">qml/IconButton.qml</file>
         <file alias="StatusNote.qml">qml/StatusNote.qml</file>
+        <file alias="SelectableText.qml">qml/SelectableText.qml</file>
         <file alias="AppMenu.qml">qml/AppMenu.qml</file>
         <file alias="AppMenuItem.qml">qml/AppMenuItem.qml</file>
         <file alias="AppMenuSeparator.qml">qml/AppMenuSeparator.qml</file>

@@ -63,6 +63,8 @@ void Theme::loadColors()
     QColor foreground(QStringLiteral("#eeeeee"));
     QColor accent(QStringLiteral("#5584aa"));
     QColor selection(QStringLiteral("#186a9a"));
+    QColor blue;
+    bool haveBlue = false;
     QColor muted;
     bool haveMuted = false;
     QString mode;
@@ -96,7 +98,10 @@ void Theme::loadColors()
                 accent = QColor(value);
             else if (key == QStringLiteral("selection"))
                 selection = QColor(value);
-            else if (key == QStringLiteral("muted")) {
+            else if (key == QStringLiteral("blue")) {
+                blue = QColor(value);
+                haveBlue = blue.isValid();
+            } else if (key == QStringLiteral("muted")) {
                 muted = QColor(value);
                 haveMuted = muted.isValid();
             }
@@ -118,14 +123,17 @@ void Theme::loadColors()
     }
     if (!haveMuted)
         muted = fallbackMix(background, foreground);
+    if (!haveBlue)
+        blue = accent;
 
     const QColor dim = foreground.darker(155);
     const bool changedColors = background != m_background || foreground != m_foreground
-        || accent != m_accent || selection != m_selection || muted != m_muted || dim != m_dim
-        || dark != m_darkMode;
+        || accent != m_accent || blue != m_blue || selection != m_selection || muted != m_muted
+        || dim != m_dim || dark != m_darkMode;
     m_background = background;
     m_foreground = foreground;
     m_accent = accent;
+    m_blue = blue;
     m_selection = selection;
     m_muted = muted;
     m_dim = dim;
@@ -176,9 +184,13 @@ void Theme::loadType()
             return explicitValue;
         return std::max(1, qRound(base * mult));
     };
-    const int caption = token(QStringLiteral("caption"), 0.833);
-    const int bodySmall = token(QStringLiteral("body-small"), 0.917);
-    const int body = token(QStringLiteral("body"), 1.0);
+    // Bump the two smallest tokens +4 so caption/bodySmall stay readable when
+    // base-size is small (senior / high display scale). Body +2 for episode
+    // notes and general readability. Sticks even if shell.toml only sets
+    // base-size; title/heading multipliers unchanged.
+    const int caption = token(QStringLiteral("caption"), 0.833) + 4;
+    const int bodySmall = token(QStringLiteral("body-small"), 0.917) + 4;
+    const int body = token(QStringLiteral("body"), 1.0) + 2;
     const int subtitle = token(QStringLiteral("subtitle"), 1.083);
     const int titleSize = token(QStringLiteral("title"), 1.167);
     const int heading = token(QStringLiteral("heading"), 1.333);

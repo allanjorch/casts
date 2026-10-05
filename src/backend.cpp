@@ -9,7 +9,10 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDBusServiceWatcher>
+#include <QDate>
 #include <QDateTime>
+#include <QLocale>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -272,8 +275,14 @@ void Backend::refreshAll(bool forceArtwork)
         for (const auto &row : rows)
             reloadArtwork(row.id);
     }
-    m_shelfRefresh = true;
-    m_shelfRefreshHadError = false;
+    if (!m_shelfRefresh) {
+        m_shelfRefresh = true;
+        m_shelfRefreshUrls.clear();
+        m_shelfRefreshOk = 0;
+        m_shelfRefreshFailed = 0;
+    }
+    for (const QString &url : urls)
+        m_shelfRefreshUrls.insert(url);
     enqueue(urls);
 }
 
@@ -475,9 +484,10 @@ void Backend::fetchNext()
     if (m_active)
         return;
     if (m_queue.isEmpty()) {
+        // Single completion point: runs whether the last feed succeeded or failed.
+        if (m_shelfRefresh)
+            finishShelfRefresh();
         setBusy(false);
-        m_shelfRefresh = false;
-        m_shelfRefreshHadError = false;
         return;
     }
     const Job job = m_queue.takeFirst();
@@ -506,8 +516,7 @@ void Backend::fetchNext()
                 fetchNext();
                 return;
             }
-            if (m_shelfRefresh)
-                m_shelfRefreshHadError = true;
+            noteShelfFeedResult(job.url, false, reply->errorString());
             setStatus(reply->errorString());
             fetchNext();
             return;
@@ -515,37 +524,28 @@ void Backend::fetchNext()
         QString error;
         const auto parsed = parseFeed(reply->readAll(), reply->url(), &error);
         if (!parsed) {
-            if (m_shelfRefresh)
-                m_shelfRefreshHadError = true;
+            noteShelfFeedResult(job.url, false,
+                                error.isEmpty() ? QStringLiteral("unparseable feed") : error);
             setStatus(error.isEmpty() ? QStringLiteral("Could not read that feed.") : error);
             fetchNext();
             return;
         }
         const qint64 showId = m_library.upsertShow(job.url, *parsed);
         if (showId == 0) {
-            if (m_shelfRefresh)
-                m_shelfRefreshHadError = true;
+            noteShelfFeedResult(job.url, false, QStringLiteral("could not save show"));
             setStatus(QStringLiteral("Could not save that show."));
             fetchNext();
             return;
         }
+        noteShelfFeedResult(job.url, true);
         if (!parsed->imageUrl.isEmpty())
             downloadCover(showId, parsed->imageUrl);
         reloadShows();
         if (m_openShowId == showId)
             openShow(showId);
         const QString title = parsed->title;
-        if (m_queue.isEmpty()) {
-            if (m_shelfRefresh) {
-                if (!m_shelfRefreshHadError)
-                    noteSuccessfulShelfRefresh();
-                setStatus(m_shelfRefreshHadError
-                              ? QStringLiteral("Refresh finished with errors.")
-                              : QStringLiteral("All podcasts updated."));
-            } else {
-                setStatus(QStringLiteral("Updated %1.").arg(title));
-            }
-        }
+        if (m_queue.isEmpty() && !m_shelfRefresh)
+            setStatus(QStringLiteral("Updated %1.").arg(title));
         fetchNext();
     });
 }
@@ -1292,17 +1292,71 @@ void Backend::maybeAutoRefreshOnLaunch()
     const qint64 lastMs = settings.value(kLastRefreshKey, 0).toLongLong();
     if (lastMs > 0) {
         const qint64 age = QDateTime::currentMSecsSinceEpoch() - lastMs;
-        if (age >= 0 && age < kAutoRefreshSkipMs)
+        if (age >= 0 && age < kAutoRefreshSkipMs) {
+            qInfo().noquote() << QStringLiteral("[podcast-refresh] launch refresh skipped: last success %1 s ago")
+                                     .arg(age / 1000);
             return;
+        }
     }
     refreshAll();
+}
+
+void Backend::noteShelfFeedResult(const QString &url, bool ok, const QString &error)
+{
+    if (!m_shelfRefresh || !m_shelfRefreshUrls.contains(url))
+        return;
+    if (ok) {
+        ++m_shelfRefreshOk;
+    } else {
+        ++m_shelfRefreshFailed;
+        qWarning().noquote() << "[podcast-refresh] feed failed:" << url << "-" << error;
+    }
+}
+
+void Backend::finishShelfRefresh()
+{
+    const int ok = m_shelfRefreshOk;
+    const int failed = m_shelfRefreshFailed;
+    m_shelfRefresh = false;
+    m_shelfRefreshUrls.clear();
+    m_shelfRefreshOk = 0;
+    m_shelfRefreshFailed = 0;
+    // The stamp gates the launch auto-refresh. Requiring every feed to succeed
+    // meant one permanently broken upstream feed (e.g. a corrupt Megaphone
+    // response) kept it from ever advancing, so every launch refreshed again.
+    // Stamp whenever the refresh actually reached the network (any feed ok);
+    // only a total failure (offline) leaves it alone so the next launch retries.
+    if (ok > 0)
+        noteSuccessfulShelfRefresh();
+    qInfo().noquote() << QStringLiteral("[podcast-refresh] shelf refresh done: %1 ok, %2 failed%3")
+                             .arg(ok)
+                             .arg(failed)
+                             .arg(ok > 0 ? QStringLiteral(", stamped") : QStringLiteral(", not stamped"));
+    setStatus(failed > 0 ? QStringLiteral("Refresh finished with errors.")
+                         : QStringLiteral("All podcasts updated."));
 }
 
 void Backend::noteSuccessfulShelfRefresh()
 {
     QSettings settings;
     settings.setValue(kLastRefreshKey, QDateTime::currentMSecsSinceEpoch());
+    settings.sync(); // persist now; do not rely on a clean shutdown
     emit lastRefreshChanged();
+}
+
+
+QString Backend::formatDay(qint64 unixSecs) const
+{
+    if (unixSecs <= 0)
+        return {};
+    // fromSecsSinceEpoch defaults to the local zone; .date() is that calendar day.
+    const QDate date = QDateTime::fromSecsSinceEpoch(unixSecs).date();
+    const QDate today = QDate::currentDate();
+    if (date == today)
+        return QStringLiteral("Today");
+    if (date == today.addDays(-1))
+        return QStringLiteral("Yesterday");
+    return QLocale().toString(date, QStringLiteral("d MMM yyyy"));
 }
 
 QString Backend::lastRefreshLabel() const

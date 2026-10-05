@@ -101,6 +101,8 @@ public:
     bool episodeShowAll() const;
     int showCount() const { return m_showCount; }
 
+    // Local calendar day for published timestamps (unix seconds).
+    Q_INVOKABLE QString formatDay(qint64 unixSecs) const;
     Q_INVOKABLE void addFeed(const QString &url);
     Q_INVOKABLE void importOpml(const QString &fileUrl);
     // forceArtwork is Ctrl+left-click: drop cached show and episode covers and fetch them again.
@@ -171,6 +173,8 @@ private:
     void setBusy(bool busy);
     void maybeAutoRefreshOnLaunch();
     void noteSuccessfulShelfRefresh();
+    void noteShelfFeedResult(const QString &url, bool ok, const QString &error = {});
+    void finishShelfRefresh();
     void reloadShows();
     void reloadEpisodes();
     QList<ShowRow> visibleShows(const QList<ShowRow> &rows) const;
@@ -216,7 +220,9 @@ private:
     QList<Job> m_queue;
     QPointer<QNetworkReply> m_active;
     bool m_shelfRefresh = false;
-    bool m_shelfRefreshHadError = false;
+    QSet<QString> m_shelfRefreshUrls; // feeds belonging to the running shelf refresh
+    int m_shelfRefreshOk = 0;
+    int m_shelfRefreshFailed = 0;
     QString m_status;
     bool m_busy = false;
     qint64 m_openShowId = 0;

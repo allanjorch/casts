@@ -66,9 +66,7 @@ Item {
     }
 
     function day(unix) {
-        if (!unix)
-            return ""
-        return Qt.formatDateTime(new Date(unix * 1000), "d MMM yyyy")
+        return backend.formatDay(unix)
     }
 
     function snippet(text) {
@@ -151,21 +149,21 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             anchors.leftMargin: 18
             anchors.rightMargin: 18
-            Text {
+            SelectableText {
                 width: parent.width
                 text: backend.openShowTitle
                 color: theme.foreground
                 font.pixelSize: theme.heading
-                font.weight: Font.Normal
-                elide: Text.ElideRight
+                wrapMode: TextEdit.NoWrap
+                clip: true
             }
-            Text {
+            SelectableText {
                 text: backend.openShowUnheard === 0
                       ? "Caught up"
                       : backend.openShowUnheard + " unplayed"
                 color: theme.dim
                 font.pixelSize: theme.caption
-                font.weight: Font.Normal
+                wrapMode: TextEdit.NoWrap
             }
         }
     }
@@ -292,15 +290,15 @@ Item {
                     font.weight: Font.Normal
                     elide: Text.ElideRight
                     text: page.day(model.published)
-                          + (model.duration > 0 ? "  ·  " + page.clock(model.duration) : "")
-                          + (model.played ? "  ·  Played" : "")
-                          + (!model.played && model.positionMs > 5000 ? "  ·  In progress" : "")
+                          + (model.duration > 0 ? " · " + page.clock(model.duration) : "")
+                          + (model.played ? " · Played" : "")
+                          + (!model.played && model.positionMs > 5000 ? " · In progress (" + page.clock(model.positionMs / 1000) + ")" : "")
                 }
                 Text {
                     width: parent.width
                     visible: model.description && model.description.length > 0
                     text: page.snippet(model.description)
-                    color: theme.dim
+                    color: model.played ? theme.dim : theme.foreground
                     font.pixelSize: theme.caption
                     font.weight: Font.Normal
                     wrapMode: Text.Wrap

@@ -12,6 +12,7 @@ class Theme : public QObject {
     Q_PROPERTY(QColor background READ background NOTIFY changed)
     Q_PROPERTY(QColor foreground READ foreground NOTIFY changed)
     Q_PROPERTY(QColor accent READ accent NOTIFY changed)
+    Q_PROPERTY(QColor blue READ blue NOTIFY changed)
     Q_PROPERTY(QColor selection READ selection NOTIFY changed)
     Q_PROPERTY(QColor muted READ muted NOTIFY changed)
     Q_PROPERTY(QColor dim READ dim NOTIFY changed)
@@ -31,6 +32,7 @@ public:
     QColor background() const { return m_background; }
     QColor foreground() const { return m_foreground; }
     QColor accent() const { return m_accent; }
+    QColor blue() const { return m_blue; }
     QColor selection() const { return m_selection; }
     QColor muted() const { return m_muted; }
     QColor dim() const { return m_dim; }
@@ -63,14 +65,15 @@ private:
     QColor m_background = QColor("#101010");
     QColor m_foreground = QColor("#eeeeee");
     QColor m_accent = QColor("#5584aa");
+    QColor m_blue = QColor("#5584aa");
     QColor m_selection = QColor("#186a9a");
     QColor m_muted = QColor("#8a8a8a");
     QColor m_dim = QColor("#9a9a9a");
     bool m_darkMode = true;
     qreal m_textScale = 1.0;
-    int m_caption = 10;
-    int m_bodySmall = 11;
-    int m_body = 12;
+    int m_caption = 14;
+    int m_bodySmall = 15;
+    int m_body = 14;
     int m_subtitle = 13;
     int m_titleSize = 14;
     int m_heading = 16;

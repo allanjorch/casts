@@ -8,8 +8,8 @@ Item {
     implicitWidth: 80
     implicitHeight: 6
 
-    // PlayerBar ignores input while a refresh holds backend.busy.
-    // Now Playing leaves this on.
+    // interactive defaults on. PlayerBar used to set interactive: !backend.busy
+    // during refresh; that busy gate is commented out so scrubbing stays available.
     property bool interactive: true
     property bool dragging: false
     property real dragFraction: 0

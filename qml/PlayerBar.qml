@@ -3,6 +3,8 @@ import QtQuick.Controls
 
 Rectangle {
     id: bar
+    // Refresh busy used to disable transport / menus; leave them usable while
+    // refresh runs. Spinner / StatusNote still use backend.busy elsewhere.
     signal markAllRequested()
     signal nowPlayingRequested()
     color: theme.darkMode ? Qt.darker(theme.background, 1.25) : Qt.lighter(theme.background, 1.08)
@@ -60,7 +62,8 @@ Rectangle {
             }
             MouseArea {
                 anchors.fill: parent
-                enabled: !backend.busy
+                // enabled: !backend.busy
+                enabled: true
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: bar.nowPlayingRequested()
             }
@@ -83,7 +86,8 @@ Rectangle {
                     IconButton {
                         icon.name: "media-seek-backward-symbolic"
                         tip: "Back 15 seconds"
-                        enabled: !backend.busy
+                        // enabled: !backend.busy
+                        enabled: true
                         onClicked: bar.nudge(-15)
                     }
                     IconButton {
@@ -91,13 +95,15 @@ Rectangle {
                                    ? "media-playback-pause-symbolic"
                                    : "media-playback-start-symbolic"
                         tip: backend.playerStatus === "playing" ? "Pause" : "Play"
-                        enabled: !backend.busy
+                        // enabled: !backend.busy
+                        enabled: true
                         onClicked: backend.togglePlayback()
                     }
                     IconButton {
                         icon.name: "media-seek-forward-symbolic"
                         tip: "Forward 30 seconds"
-                        enabled: !backend.busy
+                        // enabled: !backend.busy
+                        enabled: true
                         onClicked: bar.nudge(30)
                     }
                 }
@@ -110,7 +116,8 @@ Rectangle {
                         id: volumeButton
                         icon.name: bar.volumeIcon(backend.playerVolume)
                         tip: "Volume"
-                        enabled: !backend.busy
+                        // enabled: !backend.busy
+                        enabled: true
                         onClicked: {
                             volumePopup.x = volumeButton.mapToItem(bar, 0, 0).x
                                           + volumeButton.width / 2 - volumePopup.width / 2
@@ -121,26 +128,29 @@ Rectangle {
                     IconButton {
                         caption: rateLabel(backend.playerRate)
                         tip: "Playback speed"
-                        enabled: !backend.busy
+                        // enabled: !backend.busy
+                        enabled: true
                         onClicked: backend.cycleRate()
                     }
                     IconButton {
                         icon.name: "view-fullscreen-symbolic"
                         tip: "Now playing"
-                        enabled: !backend.busy
+                        // enabled: !backend.busy
+                        enabled: true
                         onClicked: bar.nowPlayingRequested()
                     }
                     IconButton {
                         icon.name: "check-plain-symbolic"
                         tip: "Mark"
-                        enabled: !backend.busy
+                        // enabled: !backend.busy
+                        enabled: true
                         onClicked: {
                             bar.markedPlayed = backend.playerPlayed
                             markMenu.popup()
                         }
                     }
                 }
-                Text {
+                SelectableText {
                     id: titleText
                     anchors.left: transport.right
                     anchors.right: extras.left
@@ -150,25 +160,19 @@ Rectangle {
                     text: backend.playerTitle
                     color: theme.foreground
                     font.pixelSize: theme.titleSize
-                    font.weight: Font.Normal
-                    elide: Text.ElideRight
-
-                    MouseArea {
-                        anchors.fill: parent
-                        enabled: !backend.busy
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: backend.openPlayingEpisode()
-                    }
+                    wrapMode: TextEdit.NoWrap
+                    clip: true
+                    onActivated: backend.openPlayingEpisode()
                 }
             }
 
-            Text {
+            SelectableText {
                 width: parent.width
                 text: backend.playerError.length > 0 ? backend.playerError : backend.playerShowTitle
                 color: backend.playerError.length > 0 ? theme.accent : theme.dim
                 font.pixelSize: theme.caption
-                font.weight: Font.Normal
-                elide: Text.ElideRight
+                wrapMode: TextEdit.NoWrap
+                clip: true
             }
 
             Row {
@@ -185,7 +189,8 @@ Rectangle {
                     id: scrubber
                     width: parent.width - 110 * theme.textScale
                     anchors.verticalCenter: parent.verticalCenter
-                    interactive: !backend.busy
+                    // interactive: !backend.busy
+                    interactive: true
                 }
                 Text {
                     text: scrubber.durationText
@@ -234,7 +239,8 @@ Rectangle {
                 stepSize: 0.01
                 value: backend.playerVolume
                 orientation: Qt.Vertical
-                enabled: !backend.busy
+                // enabled: !backend.busy
+                enabled: true
                 onMoved: backend.setVolume(value)
 
                 background: Item {
@@ -274,29 +280,34 @@ Rectangle {
         id: markMenu
         AppMenuItem {
             text: "Mark as played"
-            enabled: !backend.busy && !bar.markedPlayed
+            // enabled: !backend.busy && !bar.markedPlayed
+            enabled: !bar.markedPlayed
             onTriggered: backend.markPlayed(backend.playerEpisodeId, true)
         }
         AppMenuItem {
             text: "Mark as unplayed"
-            enabled: !backend.busy && bar.markedPlayed
+            // enabled: !backend.busy && bar.markedPlayed
+            enabled: bar.markedPlayed
             onTriggered: backend.markPlayed(backend.playerEpisodeId, false)
         }
         AppMenuSeparator {}
         AppMenuItem {
             text: "Mark older as played"
-            enabled: !backend.busy
+            // enabled: !backend.busy
+            enabled: true
             onTriggered: backend.markOlderPlayed(backend.playerEpisodeId)
         }
         AppMenuItem {
             text: "Mark newer as played"
-            enabled: !backend.busy
+            // enabled: !backend.busy
+            enabled: true
             onTriggered: backend.markNewerPlayed(backend.playerEpisodeId)
         }
         AppMenuSeparator {}
         AppMenuItem {
             text: "Mark all as played"
-            enabled: !backend.busy
+            // enabled: !backend.busy
+            enabled: true
             onTriggered: bar.markAllRequested()
         }
     }

@@ -174,25 +174,22 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
 
-                    Text {
+                    SelectableText {
                         width: parent.width
                         text: backend.playerTitle
                         color: theme.foreground
                         font.pixelSize: theme.titleSize
-                        font.weight: Font.Normal
                         font.family: "monospace"
-                        wrapMode: Text.WordWrap
-                        maximumLineCount: 2
-                        elide: Text.ElideRight
+                        wrapMode: TextEdit.Wrap
                     }
-                    Text {
+                    SelectableText {
                         width: parent.width
                         text: backend.playerShowTitle
                         color: theme.dim
                         font.pixelSize: theme.caption
-                        font.weight: Font.Normal
                         font.family: "monospace"
-                        elide: Text.ElideRight
+                        wrapMode: TextEdit.NoWrap
+                        clip: true
                     }
                 }
             }
@@ -204,27 +201,24 @@ Item {
                 spacing: 6
                 visible: !page.compact
 
-                Text {
+                SelectableText {
                     width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
+                    horizontalAlignment: TextEdit.AlignHCenter
                     text: backend.playerTitle
                     color: theme.foreground
                     font.pixelSize: theme.heading
-                    font.weight: Font.Normal
                     font.family: "monospace"
-                    wrapMode: Text.WordWrap
-                    maximumLineCount: 3
-                    elide: Text.ElideRight
+                    wrapMode: TextEdit.Wrap
                 }
-                Text {
+                SelectableText {
                     width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
+                    horizontalAlignment: TextEdit.AlignHCenter
                     text: backend.playerShowTitle
                     color: theme.dim
                     font.pixelSize: theme.body
-                    font.weight: Font.Normal
                     font.family: "monospace"
-                    elide: Text.ElideRight
+                    wrapMode: TextEdit.NoWrap
+                    clip: true
                 }
             }
 
@@ -324,22 +318,21 @@ Item {
                 }
             }
 
-            Text {
+            SelectableText {
                 id: synopsis
                 width: Math.min(parent.width, 560 * theme.textScale)
                 anchors.horizontalCenter: parent.horizontalCenter
-                // Compact panes hide the long description; full layout keeps up to 4 lines.
+                // Compact panes hide the long description; full layout keeps a short blurb.
                 visible: !page.compact && backend.playerDescription.length > 0
-                horizontalAlignment: Text.AlignHCenter
+                horizontalAlignment: TextEdit.AlignHCenter
                 text: backend.playerDescription
                 color: theme.dim
                 font.pixelSize: theme.bodySmall
-                font.weight: Font.Normal
                 font.family: "monospace"
-                wrapMode: Text.WordWrap
-                maximumLineCount: 4
-                elide: Text.ElideRight
-                lineHeight: 1.35
+                wrapMode: TextEdit.Wrap
+                // Cap height roughly to four lines (TextEdit has no maximumLineCount).
+                height: Math.min(implicitHeight, font.pixelSize * 1.35 * 4)
+                clip: true
                 opacity: 0.9
             }
         }

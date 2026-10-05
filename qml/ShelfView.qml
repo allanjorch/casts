@@ -16,8 +16,9 @@ Item {
     readonly property real coverSize: Math.max(columnFloor, cellWidth - galleryGap)
     readonly property real cellHeight: coverSize + theme.titleSize * 2.4 + 22
     readonly property real caughtUpVeil: 0.38
+    // Refresh gray-out disabled (same spirit as enabled: !backend.busy comments).
     // Stronger than caught-up while refresh-all runs; cleared with backend.busy on success or failure.
-    readonly property real refreshVeil: 0.62
+    // readonly property real refreshVeil: 0.62
     // Five steps. 0 matches the original 44px list cover. Keep the count in step with shelfListSize.
     readonly property var listCoverSteps: [44, 64, 88, 120, 160]
     readonly property int listCoverBase: listCoverSteps[Math.max(0, Math.min(backend.shelfListSize, listCoverSteps.length - 1))]
@@ -85,7 +86,7 @@ Item {
             color: theme.background
         }
 
-        Text {
+        SelectableText {
             id: title
             anchors.left: parent.left
             anchors.leftMargin: 22
@@ -93,7 +94,7 @@ Item {
             text: "Podcasts"
             color: theme.foreground
             font.pixelSize: theme.display
-            font.weight: Font.Normal
+            wrapMode: TextEdit.NoWrap
         }
         Row {
             id: actions
@@ -101,34 +102,39 @@ Item {
             anchors.rightMargin: 28
             anchors.verticalCenter: parent.verticalCenter
             spacing: 4
+            // Refresh busy used to disable these controls; leave them usable so
+            // shows can open while refresh runs. Spinner / StatusNote still use busy.
             // No podcasts yet: only Add and Import. The eye stays available once
             // any show exists, even if the unplayed filter hides every cover.
             readonly property bool hasShows: backend.showCount > 0
             IconButton {
                 visible: actions.hasShows
                 icon.name: backend.shelfShowAll ? "view-reveal-symbolic" : "view-conceal-symbolic"
-                tip: backend.busy ? "Refreshing…"
-                     : (backend.shelfShowAll ? "Show unplayed only" : "Show all")
-                enabled: !backend.busy
+                // tip: backend.busy ? "Refreshing…" : …
+                tip: backend.shelfShowAll ? "Show unplayed only" : "Show all"
+                // enabled: !backend.busy
+                enabled: true
                 onClicked: backend.setShelfShowAll(!backend.shelfShowAll)
             }
             IconButton {
                 visible: actions.hasShows
                 icon.name: backend.shelfView === "list" ? "view-list-symbolic" : "view-grid-symbolic"
-                tip: backend.busy ? "Refreshing…"
-                     : (backend.shelfView === "list" ? "Show as gallery" : "Show as list")
-                enabled: !backend.busy
+                // tip: backend.busy ? "Refreshing…" : …
+                tip: backend.shelfView === "list" ? "Show as gallery" : "Show as list"
+                // enabled: !backend.busy
+                enabled: true
                 onClicked: backend.setShelfView(backend.shelfView === "list" ? "gallery" : "list")
             }
             IconButton {
                 id: refreshButton
                 visible: actions.hasShows
                 icon.name: "view-refresh-symbolic"
-                tip: backend.busy ? "Refreshing…"
-                     : (backend.lastRefreshLabel.length
-                        ? ("Refresh — " + backend.lastRefreshLabel + "  ·  Ctrl+click reloads artwork")
-                        : "Refresh  ·  Ctrl+click reloads artwork")
-                enabled: !backend.busy
+                // tip: backend.busy ? "Refreshing…" : …
+                tip: backend.lastRefreshLabel.length
+                     ? ("Refresh — " + backend.lastRefreshLabel + "  ·  Ctrl+click reloads artwork")
+                     : "Refresh  ·  Ctrl+click reloads artwork"
+                // enabled: !backend.busy
+                enabled: true
                 property bool reloadArtwork: false
                 onPressedChanged: {
                     if (pressed)
@@ -157,21 +163,24 @@ Item {
             IconButton {
                 visible: actions.hasShows
                 icon.name: "check-plain-symbolic"
-                enabled: !backend.busy && grid.count > 0
-                tip: backend.busy ? "Refreshing…"
-                     : (grid.count > 0 ? "Mark all as played" : "Nothing to mark")
+                // enabled: !backend.busy && grid.count > 0
+                enabled: grid.count > 0
+                // tip: backend.busy ? "Refreshing…" : …
+                tip: grid.count > 0 ? "Mark all as played" : "Nothing to mark"
                 onClicked: shelf.markLibraryRequested()
             }
             IconButton {
                 icon.name: "list-add-symbolic"
                 tip: "Add feed"
-                enabled: !backend.busy
+                // enabled: !backend.busy
+                enabled: true
                 onClicked: shelf.addRequested()
             }
             IconButton {
                 icon.name: "document-open-symbolic"
                 tip: "Import OPML"
-                enabled: !backend.busy
+                // enabled: !backend.busy
+                enabled: true
                 onClicked: shelf.importRequested()
             }
         }
@@ -185,15 +194,14 @@ Item {
         }
     }
 
-    Text {
+    SelectableText {
         visible: grid.count === 0
         anchors.centerIn: parent
         width: Math.min(parent.width - 80, 520)
-        horizontalAlignment: Text.AlignHCenter
-        wrapMode: Text.Wrap
+        horizontalAlignment: TextEdit.AlignHCenter
+        wrapMode: TextEdit.Wrap
         color: theme.dim
         font.pixelSize: theme.body
-        font.weight: Font.Normal
         text: backend.shelfShowAll
               ? "Add a feed to start. An OPML export from Podcast Addict brings the shows with it."
               : "No shows with unplayed episodes."
@@ -254,12 +262,12 @@ Item {
                     }
                     Rectangle {
                         anchors.fill: parent
-                        visible: model.unheard === 0 && !backend.busy
+                        visible: model.unheard === 0
                         color: theme.background
                         opacity: shelf.caughtUpVeil
                     }
                     Rectangle {
-                        visible: model.unheard > 0 && !backend.busy
+                        visible: model.unheard > 0
                         anchors.top: parent.top
                         anchors.right: parent.right
                         anchors.margins: 8
@@ -276,18 +284,19 @@ Item {
                             font.weight: Font.Normal
                         }
                     }
-                    Rectangle {
-                        anchors.fill: parent
-                        visible: backend.busy
-                        color: theme.background
-                        opacity: shelf.refreshVeil
-                    }
+                    // Refresh veil: left inactive so covers stay undimmed while refresh runs.
+                    // Rectangle {
+                    //     anchors.fill: parent
+                    //     visible: backend.busy
+                    //     color: theme.background
+                    //     opacity: shelf.refreshVeil
+                    // }
                 }
 
                 Text {
                     width: parent.width
                     text: model.title
-                    color: (backend.busy || model.unheard === 0) ? theme.dim : theme.foreground
+                    color: model.unheard === 0 ? theme.dim : theme.foreground
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
                     maximumLineCount: 2
@@ -299,7 +308,8 @@ Item {
 
             MouseArea {
                 anchors.fill: parent
-                enabled: !backend.busy
+                // enabled: !backend.busy
+                enabled: true
                 hoverEnabled: true
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: backend.openShow(model.showId)
@@ -375,12 +385,12 @@ Item {
                 }
                 Rectangle {
                     anchors.fill: parent
-                    visible: model.unheard === 0 && !backend.busy
+                    visible: model.unheard === 0
                     color: theme.background
                     opacity: shelf.caughtUpVeil
                 }
                 Rectangle {
-                    visible: model.unheard > 0 && !backend.busy
+                    visible: model.unheard > 0
                     anchors.top: parent.top
                     anchors.right: parent.right
                     anchors.margins: parent.width >= 96 ? 8 : 4
@@ -397,12 +407,13 @@ Item {
                         font.weight: Font.Normal
                     }
                 }
-                Rectangle {
-                    anchors.fill: parent
-                    visible: backend.busy
-                    color: theme.background
-                    opacity: shelf.refreshVeil
-                }
+                // Refresh veil: left inactive so list covers stay undimmed while refresh runs.
+                // Rectangle {
+                //     anchors.fill: parent
+                //     visible: backend.busy
+                //     color: theme.background
+                //     opacity: shelf.refreshVeil
+                // }
             }
             Column {
                 anchors.left: rowArt.right
@@ -414,7 +425,7 @@ Item {
                 Text {
                     width: parent.width
                     text: model.title
-                    color: (backend.busy || model.unheard === 0) ? theme.dim : theme.foreground
+                    color: model.unheard === 0 ? theme.dim : theme.foreground
                     elide: Text.ElideRight
                     font.pixelSize: theme.titleSize
                     font.weight: Font.Normal
@@ -431,7 +442,8 @@ Item {
             MouseArea {
                 id: rowMouse
                 anchors.fill: parent
-                enabled: !backend.busy
+                // enabled: !backend.busy
+                enabled: true
                 hoverEnabled: true
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: backend.openShow(model.showId)
