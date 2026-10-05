@@ -30,7 +30,7 @@ const QString kPlayerService = QStringLiteral("com.github.allanjorch.podcast.Pla
 const QString kPlayerPath = QStringLiteral("/com/github/allanjorch/podcast");
 const QString kPlayerIface = QStringLiteral("com.github.allanjorch.podcast.Player");
 
-const QList<double> kRates = {1.0, 1.2, 1.5, 1.8, 2.0, 0.8};
+const QList<double> kRates = {1.0, 1.2, 1.5, 1.8, 2.0, 0.5, 0.8};
 const QString kLastRefreshKey = QStringLiteral("refresh/lastSuccessMs");
 constexpr qint64 kAutoRefreshSkipMs = 30 * 60 * 1000; // skip launch refresh if last success within this window
 constexpr int kMaxEpisodeCoverDownloads = 6;
@@ -1022,6 +1022,18 @@ void Backend::setVolume(double volume)
         callPlayer(QStringLiteral("SetVolume"), {clamped});
 }
 
+void Backend::setRate(double rate)
+{
+    const double clamped = qBound(0.5, rate, 3.0);
+    if (qAbs(clamped - m_playerRate) < 0.001)
+        return;
+    m_library.setRate(clamped);
+    m_playerRate = clamped;
+    emit playerStateChanged();
+    if (QDBusConnection::sessionBus().interface()->isServiceRegistered(kPlayerService))
+        callPlayer(QStringLiteral("SetRate"), {clamped});
+}
+
 void Backend::cycleRate()
 {
     double next = kRates.first();
@@ -1031,11 +1043,7 @@ void Backend::cycleRate()
             break;
         }
     }
-    m_library.setRate(next);
-    m_playerRate = next;
-    emit playerStateChanged();
-    if (QDBusConnection::sessionBus().interface()->isServiceRegistered(kPlayerService))
-        callPlayer(QStringLiteral("SetRate"), {next});
+    setRate(next);
 }
 
 QString Backend::shelfView() const

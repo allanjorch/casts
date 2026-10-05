@@ -13,6 +13,9 @@ Rectangle {
 
     property var markedPlayed: false
 
+    // Ascending picker order; values match backend kRates.
+    readonly property var rateChoices: [0.5, 0.8, 1.0, 1.2, 1.5, 1.8, 2.0]
+
     function rateLabel(value) {
         var rounded = Math.round(value * 10) / 10
         return (rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)) + "×"
@@ -35,6 +38,51 @@ Rectangle {
         if (backend.playerDuration > 0 && next > backend.playerDuration)
             next = backend.playerDuration
         backend.seekTo(next)
+    }
+
+    function openVolumePopup() {
+        speedCloseTimer.stop()
+        speedPopup.close()
+        volumeCloseTimer.stop()
+        volumePopup.x = volumeButton.mapToItem(bar, 0, 0).x
+                      + volumeButton.width / 2 - volumePopup.width / 2
+        volumePopup.y = -volumePopup.height - 8
+        volumePopup.open()
+    }
+
+    function openSpeedPopup() {
+        volumeCloseTimer.stop()
+        volumePopup.close()
+        speedCloseTimer.stop()
+        speedPopup.x = speedButton.mapToItem(bar, 0, 0).x
+                     + speedButton.width / 2 - speedPopup.width / 2
+        speedPopup.y = -speedPopup.height - 8
+        speedPopup.open()
+    }
+
+    function volumePointerInside() {
+        return volumeButton.hovered
+               || volumePopupBgHover.hovered || volumePopupContentHover.hovered
+               || (volumeSlider && volumeSlider.pressed)
+    }
+
+    function speedPointerInside() {
+        return speedButton.hovered
+               || speedPopupBgHover.hovered || speedPopupContentHover.hovered
+    }
+
+    function considerCloseVolume() {
+        if (volumePointerInside())
+            volumeCloseTimer.stop()
+        else
+            volumeCloseTimer.restart()
+    }
+
+    function considerCloseSpeed() {
+        if (speedPointerInside())
+            speedCloseTimer.stop()
+        else
+            speedCloseTimer.restart()
     }
 
     Row {
@@ -115,21 +163,29 @@ Rectangle {
                     IconButton {
                         id: volumeButton
                         icon.name: bar.volumeIcon(backend.playerVolume)
-                        tip: "Volume"
+                        tip: ""
                         // enabled: !backend.busy
                         enabled: true
-                        onClicked: {
-                            volumePopup.x = volumeButton.mapToItem(bar, 0, 0).x
-                                          + volumeButton.width / 2 - volumePopup.width / 2
-                            volumePopup.y = -volumePopup.height - 8
-                            volumePopup.open()
+                        onHoveredChanged: {
+                            if (hovered)
+                                bar.openVolumePopup()
+                            else
+                                bar.considerCloseVolume()
                         }
+                        onClicked: bar.openVolumePopup()
                     }
                     IconButton {
+                        id: speedButton
                         caption: rateLabel(backend.playerRate)
-                        tip: "Playback speed"
+                        tip: ""
                         // enabled: !backend.busy
                         enabled: true
+                        onHoveredChanged: {
+                            if (hovered)
+                                bar.openSpeedPopup()
+                            else
+                                bar.considerCloseSpeed()
+                        }
                         onClicked: backend.cycleRate()
                     }
                     IconButton {
@@ -202,6 +258,24 @@ Rectangle {
         }
     }
 
+    Timer {
+        id: volumeCloseTimer
+        interval: 280
+        onTriggered: {
+            if (!bar.volumePointerInside())
+                volumePopup.close()
+        }
+    }
+
+    Timer {
+        id: speedCloseTimer
+        interval: 280
+        onTriggered: {
+            if (!bar.speedPointerInside())
+                speedPopup.close()
+        }
+    }
+
     Popup {
         id: volumePopup
         parent: bar
@@ -217,60 +291,156 @@ Rectangle {
             border.color: theme.selection
             border.width: 1
             radius: 8
+
+            HoverHandler {
+                id: volumePopupBgHover
+                onHoveredChanged: bar.considerCloseVolume()
+            }
         }
 
-        contentItem: Column {
-            spacing: 8
-            Text {
-                width: parent.width
-                horizontalAlignment: Text.AlignHCenter
-                text: Math.round(backend.playerVolume * 100) + "%"
-                color: theme.dim
-                font.pixelSize: theme.caption
-                font.weight: Font.Normal
-                font.family: "monospace"
+        contentItem: Item {
+            HoverHandler {
+                id: volumePopupContentHover
+                onHoveredChanged: bar.considerCloseVolume()
             }
-            Slider {
-                id: volumeSlider
-                width: parent.width
-                height: 100 * theme.textScale
-                from: 0
-                to: 1
-                stepSize: 0.01
-                value: backend.playerVolume
-                orientation: Qt.Vertical
-                // enabled: !backend.busy
-                enabled: true
-                onMoved: backend.setVolume(value)
 
-                background: Item {
-                    x: volumeSlider.leftPadding + volumeSlider.availableWidth / 2 - width / 2
-                    y: volumeSlider.topPadding
-                    implicitWidth: 6
-                    implicitHeight: volumeSlider.availableHeight
-                    width: implicitWidth
-                    height: volumeSlider.availableHeight
-                    Rectangle {
-                        width: parent.width
-                        height: parent.height
-                        radius: 3
-                        color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)
+            Column {
+                anchors.fill: parent
+                spacing: 8
+                Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    text: Math.round(backend.playerVolume * 100) + "%"
+                    color: theme.dim
+                    font.pixelSize: theme.caption
+                    font.weight: Font.Normal
+                    font.family: "monospace"
+                }
+                Slider {
+                    id: volumeSlider
+                    width: parent.width
+                    height: 100 * theme.textScale
+                    from: 0
+                    to: 1
+                    stepSize: 0.01
+                    value: backend.playerVolume
+                    orientation: Qt.Vertical
+                    // enabled: !backend.busy
+                    enabled: true
+                    onMoved: backend.setVolume(value)
+                    HoverHandler {
+                        cursorShape: Qt.PointingHandCursor
                     }
-                    Rectangle {
-                        anchors.bottom: parent.bottom
-                        width: parent.width
-                        height: parent.height * volumeSlider.position
-                        radius: 3
-                        color: theme.accent
+                    onPressedChanged: {
+                        if (pressed)
+                            volumeCloseTimer.stop()
+                        else
+                            bar.considerCloseVolume()
+                    }
+
+                    background: Item {
+                        x: volumeSlider.leftPadding + volumeSlider.availableWidth / 2 - width / 2
+                        y: volumeSlider.topPadding
+                        implicitWidth: 6
+                        implicitHeight: volumeSlider.availableHeight
+                        width: implicitWidth
+                        height: volumeSlider.availableHeight
+                        Rectangle {
+                            width: parent.width
+                            height: parent.height
+                            radius: 3
+                            color: Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.18)
+                        }
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            width: parent.width
+                            height: parent.height * volumeSlider.position
+                            radius: 3
+                            color: theme.accent
+                        }
+                    }
+                    handle: Rectangle {
+                        x: volumeSlider.leftPadding + volumeSlider.availableWidth / 2 - width / 2
+                        y: volumeSlider.topPadding + volumeSlider.visualPosition * (volumeSlider.availableHeight - height)
+                        implicitWidth: 14 * theme.textScale
+                        implicitHeight: implicitWidth
+                        radius: width / 2
+                        color: theme.foreground
                     }
                 }
-                handle: Rectangle {
-                    x: volumeSlider.leftPadding + volumeSlider.availableWidth / 2 - width / 2
-                    y: volumeSlider.topPadding + volumeSlider.visualPosition * (volumeSlider.availableHeight - height)
-                    implicitWidth: 14 * theme.textScale
-                    implicitHeight: implicitWidth
-                    radius: width / 2
-                    color: theme.foreground
+            }
+        }
+    }
+
+    Popup {
+        id: speedPopup
+        parent: bar
+        width: 64 * theme.textScale
+        height: speedColumn.implicitHeight + topPadding + bottomPadding
+        padding: 6
+        modal: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        background: Rectangle {
+            color: theme.background
+            border.color: theme.selection
+            border.width: 1
+            radius: 8
+
+            HoverHandler {
+                id: speedPopupBgHover
+                onHoveredChanged: bar.considerCloseSpeed()
+            }
+        }
+
+        contentItem: Item {
+            HoverHandler {
+                id: speedPopupContentHover
+                onHoveredChanged: bar.considerCloseSpeed()
+            }
+
+            Column {
+                id: speedColumn
+                width: parent.width
+                spacing: 2
+
+                Repeater {
+                    model: bar.rateChoices
+                    delegate: Item {
+                        id: rateRow
+                        width: speedColumn.width
+                        height: 28 * theme.textScale
+
+                        readonly property real rateValue: modelData
+                        readonly property bool current: Math.abs(rateValue - backend.playerRate) < 0.05
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 6
+                            color: rateRow.current ? theme.selection
+                                 : rateMouse.containsMouse
+                                   ? Qt.rgba(theme.foreground.r, theme.foreground.g, theme.foreground.b, 0.10)
+                                   : "transparent"
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: bar.rateLabel(rateRow.rateValue)
+                            color: rateRow.current ? theme.accent : theme.foreground
+                            font.pixelSize: theme.body
+                            font.weight: Font.Normal
+                            font.family: "monospace"
+                        }
+
+                        MouseArea {
+                            id: rateMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: backend.setRate(rateRow.rateValue)
+                        }
+                    }
                 }
             }
         }

@@ -124,6 +124,7 @@ public:
     Q_INVOKABLE void stopPlayback();
     Q_INVOKABLE void seekTo(double seconds);
     Q_INVOKABLE void cycleRate();
+    Q_INVOKABLE void setRate(double rate);
     Q_INVOKABLE void setVolume(double volume);
     Q_INVOKABLE void setShelfView(const QString &view);
     Q_INVOKABLE void setShelfColumns(int columns);
