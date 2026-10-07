@@ -1,4 +1,5 @@
 #include "covercache.h"
+#include "explore.h"
 #include "feed.h"
 #include "library.h"
 
@@ -8,6 +9,7 @@
 #include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
+#include <QLocale>
 #include <QTemporaryDir>
 
 namespace {
@@ -242,6 +244,11 @@ int runSelfTest(int argc, char **argv)
             library.setLastPlayedEpisodeId(middle);
             check(library.lastPlayedEpisodeId() == middle, "persist lastPlayed episode id");
             library.setLastPlayedEpisodeId(0);
+            check(library.exploreCountry().isEmpty(), "explore country defaults to automatic");
+            library.setExploreCountry(QStringLiteral("GB"));
+            check(library.exploreCountry() == QStringLiteral("gb"), "explore country persists");
+            library.setExploreCountry(QString());
+            check(library.exploreCountry().isEmpty(), "explore country back to automatic");
             check(library.lastPlayedEpisodeId() == 0, "clear lastPlayed episode id");
             library.setLastPlayedEpisodeId(newest);
             check(library.lastPlayedEpisodeId() == newest, "set lastPlayed for restore");
@@ -380,6 +387,34 @@ int runSelfTest(int argc, char **argv)
             id.prepend(QLatin1Char('/'));
         check(id == path, "cover url round trip");
         check(localCoverSource(QString()).isEmpty(), "missing cover has no url");
+    }
+
+    {
+        check(Explore::normalizeFeedUrl(QStringLiteral("https://www.Example.com/feed/"))
+                  == Explore::normalizeFeedUrl(QStringLiteral("http://example.com/feed")), "explore url normalize");
+        check(Explore::normalizeFeedUrl(QStringLiteral("https://a.com/x?format=xml"))
+                  != Explore::normalizeFeedUrl(QStringLiteral("https://a.com/x")), "explore url keeps query");
+        const QByteArray search = R"({"resultCount":1,"results":[{"wrapperType":"track","kind":"podcast",
+            "collectionId":173001861,"artistName":"Dan Carlin","collectionName":"Hardcore History",
+            "collectionViewUrl":"https://podcasts.apple.com/x","feedUrl":"https://feeds.example.com/h",
+            "artworkUrl600":"https://img/600.jpg","releaseDate":"2026-07-31T18:02:00Z","trackCount":13,
+            "primaryGenreName":"History"}]})";
+        const auto rows = Explore::parseSearch(search);
+        check(rows.size() == 1 && rows.at(0).id == 173001861 && rows.at(0).feedUrl == QStringLiteral("https://feeds.example.com/h")
+                  && rows.at(0).trackCount == 13 && rows.at(0).released > 0 && rows.at(0).genre == QStringLiteral("History"),
+              "explore parse search");
+        const QByteArray top = R"({"feed":{"entry":[{"im:name":{"label":"Mørkeland"},"im:artist":{"label":"A"},
+            "im:image":[{"label":"https://x/55x55bb.png"},{"label":"https://x/170x170bb.png"}],
+            "id":{"label":"https://podcasts.apple.com/dk/podcast/id1","attributes":{"im:id":"1"}},
+            "category":{"attributes":{"label":"True Crime"}}}]}})";
+        const auto chart = Explore::parseTopChart(top);
+        check(chart.size() == 1 && chart.at(0).id == 1 && chart.at(0).cover == QStringLiteral("https://x/600x600bb.png")
+                  && chart.at(0).genre == QStringLiteral("True Crime") && chart.at(0).feedUrl.isEmpty(),
+              "explore parse top chart");
+        int unknown = 0;
+        for (const QString &code : Explore::storefronts())
+            unknown += QLocale::codeToTerritory(code) == QLocale::AnyTerritory ? 1 : 0;
+        check(unknown == 0 && Explore::storefronts().size() >= 40, "explore storefront codes map to territories");
     }
 
     if (g_fails == 0) {

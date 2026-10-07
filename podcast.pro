@@ -15,7 +15,8 @@ SOURCES += \
     src/backend.cpp \
     src/player.cpp \
     src/growingmediadevice.cpp \
-    src/selftest.cpp
+    src/selftest.cpp \
+    src/explore.cpp
 
 HEADERS += \
     src/library.h \
@@ -25,7 +26,9 @@ HEADERS += \
     src/covercache.h \
     src/backend.h \
     src/player.h \
-    src/growingmediadevice.h
+    src/growingmediadevice.h \
+    src/explore.h \
+    src/netaccess.h
 
 RESOURCES += resources.qrc
 

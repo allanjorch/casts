@@ -43,6 +43,7 @@ struct ParsedEpisode {
 
 struct ParsedShow {
     QString title;
+    QString description; // channel description (Explore preview)
     QString author;
     QString imageUrl;
     QList<ParsedEpisode> episodes;
@@ -104,6 +105,9 @@ public:
     void setShelfShowAll(bool showAll);
     bool episodeShowAll() const;
     double nowPlayingArtScale() const;
+    // Explore store country (two-letter code); empty = automatic.
+    QString exploreCountry() const;
+    void setExploreCountry(const QString &code);
     void setNowPlayingArtScale(double scale);
     void setEpisodeShowAll(bool showAll);
 

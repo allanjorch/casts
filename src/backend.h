@@ -4,6 +4,8 @@
 #include "models.h"
 
 #include <QHash>
+#include "netaccess.h"
+
 #include <QNetworkAccessManager>
 #include <QObject>
 #include <QPointer>
@@ -267,7 +269,7 @@ private:
     EpisodeModel m_episodes;
     EpisodeModel m_queueModel;
     QHash<qint64, EpisodeModel *> m_episodeModels;
-    QNetworkAccessManager m_network;
+    AppNetworkAccessManager m_network; // HTTP/1.1 only, see netaccess.h
     QList<Job> m_queue;
     QPointer<QNetworkReply> m_active;
     bool m_shelfRefresh = false;

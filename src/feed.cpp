@@ -215,6 +215,10 @@ std::optional<ParsedShow> parseFeed(const QByteArray &xml, const QUrl &base, QSt
                 show.title = value;
             else if (!episode && name == QStringLiteral("author") && show.author.isEmpty())
                 show.author = value;
+            else if (!episode && show.description.isEmpty() && !stack.contains(QStringLiteral("image"))
+                     && (name == QStringLiteral("description") || name == QStringLiteral("summary")
+                         || name == QStringLiteral("subtitle")))
+                show.description = value;
             else if (!episode && name == QStringLiteral("url") && stack.contains(QStringLiteral("image"))
                      && show.imageUrl.isEmpty())
                 show.imageUrl = resolveUrl(value, base);

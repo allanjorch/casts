@@ -25,7 +25,8 @@ Work **one item at a time**. Do not start the next until the current one is done
 15. [x] **Quiet scrollbar** — Minimal dynamic scrollbar (QuietScroll) on shelf and episode lists that tracks loaded content.
 16. [ ] **Scroll look and feel** — Revisit how scrolling looks to a person: motion, distance, and the thin scrollbar, not just that the wheel moves.
 17. [x] **Add-feed URL dialog** — The add-by-URL dialog looks weird; restyle it to match the app's design language.
-18. [ ] **Search** — Search for podcasts and/or episodes.
+18. [ ] **Search: online podcast directory (Explore)** — Find podcasts out there (iTunes directory, top chart), preview and subscribe.
 19. [x] **Queue** — Add episodes to a queue, play from it, reorder, and remove.
 20. [x] **Page navigation** — Browser-style back/forward history; mouse side buttons, Alt+Left/Right.
 21. [x] **Now Playing art** — Ctrl+wheel resizes the cover (20–100%, saved, Ctrl+0 resets) without flicker; right-click Copy / Save artwork… / Copy image URL on Now Playing art and shelf covers.
+22. [ ] **Search: episodes within library** — Search episode titles/notes across subscribed shows.

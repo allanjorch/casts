@@ -2,6 +2,8 @@
 
 #include <QIODevice>
 #include <QMutex>
+#include "netaccess.h"
+
 #include <QNetworkAccessManager>
 #include <QObject>
 #include <QUrl>

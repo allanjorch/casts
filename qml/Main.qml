@@ -15,6 +15,7 @@ ApplicationWindow {
     title: pageKind === "episode" ? backend.openEpisodeTitle
          : pageKind === "show" ? backend.openShowTitle
          : pageKind === "queue" ? "Queue"
+         : pageKind === "explore" ? "Explore"
          : pageKind === "nowPlaying" ? backend.playerTitle
          : "Podcasts"
     color: theme.background
@@ -95,7 +96,7 @@ ApplicationWindow {
     property int historyIndex: 0
     readonly property var currentPage: history[Math.max(0, Math.min(historyIndex, history.length - 1))]
     readonly property string pageKind: currentPage.kind
-    readonly property bool canGoBack: modalOpen || historyIndex > 0
+    readonly property bool canGoBack: modalOpen || explore.previewOpen || explorePage.regionOpen || historyIndex > 0
     readonly property bool canGoForward: !modalOpen && historyIndex < history.length - 1
     readonly property bool modalOpen: addOpen || confirmAll || confirmLibrary || confirmRemove || confirmQueue
     readonly property bool nowPlayingOpen: pageKind === "nowPlaying"
@@ -141,6 +142,13 @@ ApplicationWindow {
     function back() {
         if (closeModals())
             return
+        // Explore's region picker and preview card are page-level overlays: close them first.
+        if (pageKind === "explore" && explorePage.closeRegions())
+            return
+        if (pageKind === "explore" && explore.previewOpen) {
+            explore.closePreview()
+            return
+        }
         if (historyIndex <= 0)
             return
         historyIndex = historyIndex - 1
@@ -163,6 +171,7 @@ ApplicationWindow {
         navigate(makeEntry("episode", backend.episodeShowId(episodeId), episodeId))
     }
     function openQueuePage() { navigate(makeEntry("queue", 0, 0)) }
+    function openExplorePage() { navigate(makeEntry("explore", 0, 0)) }
     function openNowPlayingPage() {
         if (backend.playerEpisodeId !== 0)
             navigate(makeEntry("nowPlaying", 0, 0))
@@ -343,7 +352,8 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Space"
-        enabled: !addOpen
+        // Never steal a typed space from a text field (Explore search, add feed).
+        enabled: !addOpen && !(win.activeFocusItem instanceof TextInput)
         context: Qt.ApplicationShortcut
         onActivated: backend.togglePlayback()
     }
@@ -401,6 +411,7 @@ ApplicationWindow {
                 onImportRequested: opmlDialog.open()
                 onMarkLibraryRequested: win.confirmLibrary = true
                 onQueueRequested: win.openQueuePage()
+                onExploreRequested: win.openExplorePage()
             }
 
             // One episode page per visited show. Back only hides it, so the
@@ -426,6 +437,14 @@ ApplicationWindow {
                 z: 2
                 visible: win.pageKind === "episode"
                 onMarkAllRequested: win.confirmAll = true
+            }
+
+            ExploreView {
+                id: explorePage
+                anchors.fill: parent
+                z: 1.5
+                visible: win.pageKind === "explore"
+                onDismissRequested: win.back()
             }
 
             QueueView {

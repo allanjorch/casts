@@ -804,3 +804,16 @@ void Library::setNowPlayingArtScale(double scale)
 {
     setSetting(QStringLiteral("nowPlaying.artScale"), QString::number(qBound(0.2, scale, 1.0), 'f', 2));
 }
+
+QString Library::exploreCountry() const
+{
+    const QString code = setting(QStringLiteral("explore.country"), QString()).trimmed().toLower();
+    return code.size() == 2 ? code : QString();
+}
+
+void Library::setExploreCountry(const QString &code)
+{
+    const QString clean = code.trimmed().toLower();
+    // Non-null empty string: a null QString binds as SQL NULL and the write fails.
+    setSetting(QStringLiteral("explore.country"), clean.size() == 2 ? clean : QStringLiteral(""));
+}

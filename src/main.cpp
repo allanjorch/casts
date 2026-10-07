@@ -1,5 +1,7 @@
 #include "backend.h"
 #include "covercache.h"
+#include "explore.h"
+#include "netaccess.h"
 #include "player.h"
 #include "theme.h"
 
@@ -148,15 +150,19 @@ int main(int argc, char **argv)
 
     Theme theme;
     Backend backend(library);
+    Explore explore(library, backend);
     UiBridge bridge(&backend);
     bus.registerObject(QStringLiteral("/com/github/allanjorch/podcast/Ui"), &bridge,
                        QDBusConnection::ExportAllSlots);
     bus.registerService(uiService);
 
+
     QQmlApplicationEngine engine;
+    engine.setNetworkAccessManagerFactory(new AppNetworkAccessManagerFactory);
     engine.addImageProvider(QStringLiteral("covers"), new CoverImageProvider);
     engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
     engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
+    engine.rootContext()->setContextProperty(QStringLiteral("explore"), &explore);
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty())
         return 1;

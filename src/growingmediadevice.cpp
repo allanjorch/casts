@@ -23,7 +23,7 @@ HttpFileBuffer::HttpFileBuffer(qint64 episodeId, const QUrl &url, QObject *paren
     : QObject(parent)
     , m_episodeId(episodeId)
     , m_url(url)
-    , m_nam(new QNetworkAccessManager(this))
+    , m_nam(new AppNetworkAccessManager(this)) // HTTP/1.1 only, see netaccess.h
 {
     m_ext = extensionFromUrl(url);
     m_hintUrl = QUrl(QStringLiteral("file:episode%1%2").arg(episodeId).arg(m_ext));

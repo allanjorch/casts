@@ -7,6 +7,7 @@ Item {
     signal importRequested()
     signal markLibraryRequested()
     signal queueRequested()
+    signal exploreRequested()
 
     readonly property int columnFloor: 112
     readonly property real galleryGap: 12
@@ -143,16 +144,17 @@ Item {
                 }
                 onClicked: backend.refreshAll(reloadArtwork)
 
+                // Spin only the glyph so the hover/press background stays still.
                 RotationAnimator {
-                    target: refreshButton
+                    target: refreshButton.contentItem
                     from: 0
                     to: 360
                     duration: 900
                     loops: Animation.Infinite
                     running: backend.busy && refreshButton.visible
                     onRunningChanged: {
-                        if (!running)
-                            refreshButton.rotation = 0
+                        if (!running && refreshButton.contentItem)
+                            refreshButton.contentItem.rotation = 0
                     }
                 }
             }
@@ -170,6 +172,11 @@ Item {
                 // tip: backend.busy ? "Refreshing…" : …
                 tip: grid.count > 0 ? "Mark all as played" : "Nothing to mark"
                 onClicked: shelf.markLibraryRequested()
+            }
+            IconButton {
+                icon.name: "system-search-symbolic"
+                tip: "Explore podcasts"
+                onClicked: shelf.exploreRequested()
             }
             IconButton {
                 icon.name: "list-add-symbolic"
