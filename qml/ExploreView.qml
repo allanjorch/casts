@@ -81,8 +81,8 @@ Item {
             id: searchField
             anchors.left: back.right
             anchors.leftMargin: 18
-            anchors.right: spinner.left
-            anchors.rightMargin: 12
+            anchors.right: flagButton.left
+            anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
             // Plain in-box hint like the add-feed dialog: no floating label, no animation.
             color: theme.foreground
@@ -91,9 +91,41 @@ Item {
             topPadding: 10
             bottomPadding: 10
             leftPadding: 10
-            rightPadding: 10
+            // Room inside the box for the loading spinner and the clear button.
+            rightPadding: 10 + clearButton.width + (spinner.visible ? spinner.width + 4 : 0)
             verticalAlignment: TextInput.AlignVCenter
             Material.accent: theme.accent
+
+            BusyIndicator {
+                id: spinner
+                anchors.right: clearButton.left
+                anchors.rightMargin: 2
+                anchors.verticalCenter: parent.verticalCenter
+                width: 24 * theme.textScale
+                height: width
+                running: explore.loading
+                visible: explore.loading
+                Material.accent: theme.accent
+            }
+
+            // Clear: only while there is text; empties the box and brings the hint back.
+            IconButton {
+                id: clearButton
+                anchors.right: parent.right
+                anchors.rightMargin: 2
+                anchors.verticalCenter: parent.verticalCenter
+                visible: searchField.length > 0
+                width: visible ? implicitWidth : 0
+                implicitHeight: 30 * theme.textScale
+                icon.name: "window-close-symbolic"
+                tip: "Clear search"
+                focusPolicy: Qt.NoFocus
+                onClicked: {
+                    searchField.clear()
+                    explore.setQuery("")
+                    searchField.forceActiveFocus()
+                }
+            }
             Text {
                 x: searchField.leftPadding
                 anchors.verticalCenter: parent.verticalCenter
@@ -110,25 +142,46 @@ Item {
             onAccepted: explore.searchNow()
         }
 
-        BusyIndicator {
-            id: spinner
-            anchors.right: regionButton.left
-            anchors.rightMargin: 8
-            anchors.verticalCenter: parent.verticalCenter
-            width: 28 * theme.textScale
-            height: width
-            running: explore.loading
-            opacity: explore.loading ? 1 : 0
-            Material.accent: theme.accent
-        }
-
+        // Region picker: the flag of the region in use (emoji from the two-letter
+        // code) plus a small dropdown arrow. Falls back to the globe if no code.
         IconButton {
-            id: regionButton
+            id: flagButton
             anchors.right: parent.right
             anchors.rightMargin: 16
             anchors.verticalCenter: parent.verticalCenter
-            icon.source: "qrc:/icons/globe-symbolic.svg"
+            readonly property string code: (explore.countryCode || "").toUpperCase()
+            readonly property string flag: code.length === 2
+                     ? String.fromCodePoint(0x1F1E6 + code.charCodeAt(0) - 65,
+                                            0x1F1E6 + code.charCodeAt(1) - 65)
+                     : ""
+            leftPadding: 8
+            rightPadding: 6
+            implicitWidth: flagRow.implicitWidth + leftPadding + rightPadding
             tip: "Region: " + explore.countryName
+            contentItem: Row {
+                id: flagRow
+                spacing: 4 * theme.textScale
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: flagButton.flag.length > 0
+                    text: flagButton.flag
+                    font.family: "Noto Color Emoji"
+                    font.pixelSize: theme.heading
+                }
+                Image {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: flagButton.flag.length === 0
+                    source: "qrc:/icons/globe-symbolic.svg"
+                    sourceSize.width: 18 * theme.textScale
+                    sourceSize.height: 18 * theme.textScale
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "\u25BE"
+                    color: regionPopup.opened ? theme.foreground : theme.dim
+                    font.pixelSize: theme.body
+                }
+            }
             // A press on this button while the list is open already closed it
             // (press outside); don't reopen it on the same click.
             onClicked: {
