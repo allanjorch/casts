@@ -42,6 +42,13 @@ public:
 
     static QString mediaDir();
     static void pruneCache(qint64 keepEpisodeId, qint64 keepNextId = 0);
+    // Deletes every cached episode file (finished, .part and UA sidecars).
+    // Call only when nothing is playing. Returns the number of media files removed.
+    static int purgeMediaCache();
+
+    // Audio User-Agent to try first for this URL's host this session: the generic
+    // player identity, or the app's own if that host refused the generic one.
+    static QByteArray preferredUserAgent(const QUrl &url);
 
 signals:
     void progressed(qint64 availableBytes);
@@ -60,6 +67,11 @@ private:
     void setAvailableLocked(qint64 bytes);
     void wakeReaders();
     QString partPath() const;
+    QString uaSidecarPath() const;
+    void writeUaSidecar();
+    bool headersRejected(QNetworkReply *reply) const;
+    void evaluateHeaders(QNetworkReply *reply);
+    bool tryUserAgentFallback(bool httpRefusal, const QString &why);
     QString finishedPathForExt(const QString &ext) const;
     QString chooseExtension(const QString &contentType) const;
     static QString extensionFromUrl(const QUrl &url);
@@ -84,6 +96,20 @@ private:
     bool m_acceptRanges = true;
     int m_retries = 0;
     QString m_error;
+
+    // User-Agent consistency: every request for one .part uses m_ua; the
+    // sidecar records which UA produced the bytes on disk so a resume never
+    // splices two ad variants together.
+    QByteArray m_ua;
+    QByteArray m_sidecarUa;     // UA recorded for the bytes currently on disk
+    bool m_reqHeadersSeen = false; // per request
+    bool m_reqRejected = false;    // per request: 4xx/5xx or non-audio type
+    bool m_reqAccepted = false;    // per request: audio headers accepted
+    bool m_gotAudioThisRun = false; // any request of this buffer was accepted
+    bool m_triedFallback = false;
+    bool m_fallbackInFlight = false;
+    bool m_genericRefusedByHost = false;
+    bool m_truncateOnAccept = false; // next accepted response restarts the file at 0
 };
 
 class GrowingMediaDevice : public QIODevice {

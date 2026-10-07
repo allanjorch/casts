@@ -110,6 +110,9 @@ public:
     void setExploreCountry(const QString &code);
     void setNowPlayingArtScale(double scale);
     void setEpisodeShowAll(bool showAll);
+    // Which audio User-Agent generation the media cache was downloaded with.
+    QString audioCacheUa() const;
+    void setAudioCacheUa(const QString &generation);
 
     QStringList feedUrls() const;
 

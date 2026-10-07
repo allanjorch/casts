@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSet>
 #include <QStandardPaths>
 #include <QTimer>
 
@@ -17,6 +18,28 @@ constexpr qint64 kMaxCacheBytes = 1500LL * 1024 * 1024; // ~1.5 GiB soft cap
 constexpr qint64 kPartMaxAgeMs = 24LL * 60 * 60 * 1000; // 1 day
 constexpr int kMaxRetries = 12;
 constexpr int kRetryBaseMs = 800;
+
+// Hosts that refused the generic player identity this session; their audio is
+// fetched with the app's own User-Agent from the first request on.
+QMutex g_appUaHostsMutex;
+QSet<QString> g_appUaHosts;
+
+bool isGenericUa(const QByteArray &ua)
+{
+    return ua == QByteArray(kAudioGenericUserAgent);
+}
+
+const char *uaLabel(const QByteArray &ua)
+{
+    return isGenericUa(ua) ? "generic" : "app";
+}
+}
+
+QByteArray HttpFileBuffer::preferredUserAgent(const QUrl &url)
+{
+    QMutexLocker lock(&g_appUaHostsMutex);
+    return g_appUaHosts.contains(url.host().toLower()) ? QByteArray(kAudioAppUserAgent)
+                                                       : QByteArray(kAudioGenericUserAgent);
 }
 
 HttpFileBuffer::HttpFileBuffer(qint64 episodeId, const QUrl &url, QObject *parent)
@@ -75,6 +98,22 @@ QString HttpFileBuffer::chooseExtension(const QString &contentType) const
 QString HttpFileBuffer::partPath() const
 {
     return mediaDir() + QStringLiteral("/%1.part").arg(m_episodeId);
+}
+
+QString HttpFileBuffer::uaSidecarPath() const
+{
+    // Hidden, so directory scans (QDir::Files without Hidden) never see it as media.
+    return mediaDir() + QStringLiteral("/.%1.ua").arg(m_episodeId);
+}
+
+void HttpFileBuffer::writeUaSidecar()
+{
+    QFile side(uaSidecarPath());
+    if (side.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        side.write(m_ua);
+        side.close();
+    }
+    m_sidecarUa = m_ua;
 }
 
 QString HttpFileBuffer::finishedPathForExt(const QString &ext) const
@@ -175,6 +214,29 @@ void HttpFileBuffer::start()
     if (QFileInfo::exists(part))
         existing = QFileInfo(part).size();
 
+    m_ua = preferredUserAgent(m_url);
+    // A host already known to refuse the generic identity gets no second try.
+    m_triedFallback = !isGenericUa(m_ua);
+    if (existing > 0) {
+        // Resume only bytes fetched with this same UA; another UA can mean another
+        // ad variant, and splicing two variants corrupts the episode.
+        QByteArray recorded;
+        QFile side(uaSidecarPath());
+        if (side.open(QIODevice::ReadOnly))
+            recorded = side.readAll().trimmed();
+        if (recorded != m_ua) {
+            qInfo("[podcast-cache] episode %lld: .part was fetched with %s UA, restarting from 0",
+                  static_cast<long long>(m_episodeId),
+                  recorded.isEmpty() ? "unknown" : uaLabel(recorded));
+            QFile::remove(part);
+            existing = 0;
+        } else {
+            m_sidecarUa = recorded;
+        }
+    }
+    if (existing == 0)
+        QFile::remove(uaSidecarPath());
+
     m_writer = new QFile(part, this);
     QIODevice::OpenMode mode = QIODevice::WriteOnly;
     if (existing > 0)
@@ -214,19 +276,27 @@ void HttpFileBuffer::startRequest(qint64 fromOffset)
         m_reply = nullptr;
     }
 
+    // Bytes on disk came from another UA: fetch the whole file again, never a Range.
+    if (m_truncateOnAccept)
+        fromOffset = 0;
+    if (m_ua.isEmpty())
+        m_ua = preferredUserAgent(m_url);
+    m_reqHeadersSeen = false;
+    m_reqRejected = false;
+    m_reqAccepted = false;
+
     QNetworkRequest req(m_url);
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                      QNetworkRequest::NoLessSafeRedirectPolicy);
-    req.setHeader(QNetworkRequest::UserAgentHeader,
-                  QStringLiteral("podcast/1.0 (+https://github.com/allanjorch/casts)"));
+    req.setRawHeader("User-Agent", m_ua);
     // Prefer identity so .part bytes match the final file without on-the-fly decode surprises.
     req.setRawHeader("Accept-Encoding", "identity");
-    if (fromOffset > 0) {
+    if (fromOffset > 0)
         req.setRawHeader("Range",
                          QByteArray("bytes=") + QByteArray::number(fromOffset) + QByteArray("-"));
-        qInfo("[podcast-cache] Range retry episode %lld from offset %lld",
-              static_cast<long long>(m_episodeId), static_cast<long long>(fromOffset));
-    }
+    qInfo("[podcast-cache] GET episode %lld ua=%s (%s) from %lld",
+          static_cast<long long>(m_episodeId), uaLabel(m_ua), m_ua.constData(),
+          static_cast<long long>(fromOffset));
 
     m_reply = m_nam->get(req);
     connect(m_reply, &QNetworkReply::readyRead, this, &HttpFileBuffer::onReadyRead);
@@ -238,47 +308,12 @@ void HttpFileBuffer::onReadyRead()
     if (!m_reply || !m_writer || m_aborted)
         return;
 
-    // Capture headers once; if we asked for Range but got 200, rewrite from scratch
-    // before any bytes are appended onto a partial .part.
-    if (m_contentLength < 0) {
-        const int status = m_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        const bool askedRange = m_reply->request().hasRawHeader("Range");
-        if (askedRange && status == 200 && m_writer->size() > 0) {
-            qWarning("[podcast-cache] server ignored Range for episode %lld; rewriting",
-                     static_cast<long long>(m_episodeId));
-            m_writer->resize(0);
-            m_writer->seek(0);
-            {
-                QMutexLocker lock(&m_mutex);
-                setAvailableLocked(0);
-                m_unflushed = 0;
-                wakeReaders();
-            }
-        }
-
-        const QVariant cl = m_reply->header(QNetworkRequest::ContentLengthHeader);
-        if (cl.isValid()) {
-            const qint64 len = cl.toLongLong();
-            QMutexLocker lock(&m_mutex);
-            if (status == 206)
-                m_contentLength = m_available + len;
-            else if (m_available == 0)
-                m_contentLength = len;
-        }
-        const QByteArray ar = m_reply->rawHeader("Accept-Ranges").toLower();
-        if (!ar.isEmpty())
-            m_acceptRanges = ar.contains("bytes");
-        const QString ct = m_reply->header(QNetworkRequest::ContentTypeHeader).toString();
-        if (!ct.isEmpty()) {
-            const QString ext = chooseExtension(ct);
-            if (ext != m_ext) {
-                m_ext = ext;
-                m_hintUrl = QUrl(QStringLiteral("file:episode%1%2").arg(m_episodeId).arg(m_ext));
-            }
-        }
-        // Mark headers seen even when Content-Length is absent.
-        if (m_contentLength < 0)
-            m_contentLength = 0;
+    evaluateHeaders(m_reply);
+    if (!m_reqAccepted) {
+        // Error page or non-audio body: never let it into the .part. The
+        // finished handler decides between UA fallback and a retry.
+        m_reply->readAll();
+        return;
     }
 
     const QByteArray chunk = m_reply->readAll();
@@ -298,6 +333,99 @@ void HttpFileBuffer::onReadyRead()
     m_unflushed += written;
     if (m_unflushed >= kFlushEvery)
         flushWriter(false);
+}
+
+bool HttpFileBuffer::headersRejected(QNetworkReply *reply) const
+{
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (status >= 400)
+        return true;
+    // Some hosts answer an identity they dislike with a 200 HTML/JSON page.
+    const QString ct = reply->header(QNetworkRequest::ContentTypeHeader).toString().toLower();
+    return ct.startsWith(QStringLiteral("text/")) || ct.contains(QStringLiteral("html"))
+        || ct.contains(QStringLiteral("json")) || ct.contains(QStringLiteral("xml"));
+}
+
+void HttpFileBuffer::evaluateHeaders(QNetworkReply *reply)
+{
+    if (m_reqHeadersSeen || !reply || !m_writer)
+        return;
+    m_reqHeadersSeen = true;
+    if (headersRejected(reply)) {
+        m_reqRejected = true;
+        return;
+    }
+
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    // Anything but a 206 continuation starts the file over: a 200 to a Range
+    // request, or the first accepted reply after a UA switch.
+    if (m_truncateOnAccept || (status != 206 && m_writer->size() > 0)) {
+        qWarning("[podcast-cache] episode %lld: rewriting .part from 0 (%s)",
+                 static_cast<long long>(m_episodeId),
+                 m_truncateOnAccept ? "new UA" : "server ignored Range");
+        m_writer->resize(0);
+        m_writer->seek(0);
+        QMutexLocker lock(&m_mutex);
+        setAvailableLocked(0);
+        m_unflushed = 0;
+        wakeReaders();
+    }
+    m_truncateOnAccept = false;
+    if (m_sidecarUa != m_ua)
+        writeUaSidecar();
+    if (m_fallbackInFlight) {
+        m_fallbackInFlight = false;
+        const QString host = m_url.host().toLower();
+        {
+            QMutexLocker lock(&g_appUaHostsMutex);
+            g_appUaHosts.insert(host);
+        }
+        qWarning("[podcast-cache] %s refused the generic player identity; using the app's "
+                 "own for this session (may include ads)", qPrintable(host));
+    }
+    m_reqAccepted = true;
+    m_gotAudioThisRun = true;
+
+    {
+        QMutexLocker lock(&m_mutex);
+        const QVariant cl = reply->header(QNetworkRequest::ContentLengthHeader);
+        if (cl.isValid())
+            m_contentLength = (status == 206) ? m_available + cl.toLongLong() : cl.toLongLong();
+        // Mark headers seen even when Content-Length is absent.
+        if (m_contentLength < 0)
+            m_contentLength = 0;
+    }
+    const QByteArray ar = reply->rawHeader("Accept-Ranges").toLower();
+    if (!ar.isEmpty())
+        m_acceptRanges = ar.contains("bytes");
+    const QString ct = reply->header(QNetworkRequest::ContentTypeHeader).toString();
+    if (!ct.isEmpty()) {
+        const QString ext = chooseExtension(ct);
+        if (ext != m_ext) {
+            m_ext = ext;
+            m_hintUrl = QUrl(QStringLiteral("file:episode%1%2").arg(m_episodeId).arg(m_ext));
+        }
+    }
+}
+
+bool HttpFileBuffer::tryUserAgentFallback(bool httpRefusal, const QString &why)
+{
+    // Once per buffer, only before the generic identity has delivered any audio:
+    // after that, failures are network blips and the normal Range retry applies.
+    if (m_aborted || m_failed || m_triedFallback || m_gotAudioThisRun || !isGenericUa(m_ua))
+        return false;
+    m_triedFallback = true;
+    m_fallbackInFlight = true;
+    m_genericRefusedByHost = httpRefusal;
+    m_ua = QByteArray(kAudioAppUserAgent);
+    {
+        QMutexLocker lock(&m_mutex);
+        m_truncateOnAccept = m_available > 0 || (m_writer && m_writer->size() > 0);
+    }
+    qWarning("[podcast-cache] episode %lld: generic player identity failed (%s); retrying now "
+             "with the app's own", static_cast<long long>(m_episodeId), qPrintable(why));
+    startRequest(0);
+    return true;
 }
 
 void HttpFileBuffer::flushWriter(bool force)
@@ -329,9 +457,16 @@ void HttpFileBuffer::onReplyFinished()
 
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     const auto err = reply->error();
+    const bool askedRange = reply->request().hasRawHeader("Range");
+
+    // Headers with no body never fire readyRead; judge them here. A pure
+    // network failure (no HTTP status) has no headers to judge.
+    if (!m_aborted && err != QNetworkReply::OperationCanceledError
+        && (err == QNetworkReply::NoError || status > 0))
+        evaluateHeaders(reply);
 
     // Drain any remaining bytes before deciding success/fail.
-    if (err == QNetworkReply::NoError && m_writer && !m_aborted) {
+    if (err == QNetworkReply::NoError && m_reqAccepted && m_writer && !m_aborted) {
         const QByteArray rest = reply->readAll();
         if (!rest.isEmpty()) {
             m_writer->write(rest);
@@ -348,8 +483,51 @@ void HttpFileBuffer::onReplyFinished()
     if (err == QNetworkReply::OperationCanceledError)
         return;
 
-    // 200 after a Range request means server ignored Range — restart from 0 if we had a partial.
-    if (err == QNetworkReply::NoError
+    if (!m_reqAccepted) {
+        // Failed before any audio arrived from this request.
+        if (status == 416 && askedRange && m_retries < kMaxRetries) {
+            // Our offset is past what the server has: same UA, from the top.
+            ++m_retries;
+            m_truncateOnAccept = true;
+            startRequest(0);
+            return;
+        }
+        QString why;
+        if (m_reqRejected && status >= 400)
+            why = QStringLiteral("HTTP %1").arg(status);
+        else if (m_reqRejected)
+            why = QStringLiteral("content type %1")
+                      .arg(reply->header(QNetworkRequest::ContentTypeHeader).toString());
+        else
+            why = reply->errorString();
+        if (tryUserAgentFallback(m_reqRejected, why))
+            return;
+        if (m_fallbackInFlight) {
+            // The app identity failed too.
+            m_fallbackInFlight = false;
+            if (!m_genericRefusedByHost) {
+                // Both failed without an HTTP answer: that is the network, not
+                // the host. Keep retrying with the generic identity.
+                m_ua = QByteArray(kAudioGenericUserAgent);
+                QMutexLocker lock(&m_mutex);
+                m_truncateOnAccept = m_available > 0 && m_sidecarUa != m_ua;
+            }
+        }
+        if (m_reqRejected && err == QNetworkReply::NoError && m_retries >= kMaxRetries) {
+            m_failed = true;
+            m_error = QStringLiteral("Server did not send audio (%1)").arg(why);
+            qWarning("[podcast-cache] episode %lld failed: %s",
+                     static_cast<long long>(m_episodeId), qPrintable(m_error));
+            {
+                QMutexLocker lock(&m_mutex);
+                wakeReaders();
+            }
+            emit failed(m_error);
+            return;
+        }
+    }
+
+    if (m_reqAccepted && err == QNetworkReply::NoError
         && (status == 200 || status == 206 || status == 0)) {
         if (finalizeRename())
             return;
@@ -436,6 +614,7 @@ bool HttpFileBuffer::finalizeRename()
 
     delete m_writer;
     m_writer = nullptr;
+    QFile::remove(uaSidecarPath());
 
     {
         QMutexLocker lock(&m_mutex);
@@ -500,6 +679,7 @@ void HttpFileBuffer::pruneCache(qint64 keepEpisodeId, qint64 keepNextId)
                 && (nowMs - fi.lastModified().toMSecsSinceEpoch()) > kPartMaxAgeMs) {
                 qInfo("[podcast-cache] prune stale .part %s", qPrintable(fi.absoluteFilePath()));
                 QFile::remove(fi.absoluteFilePath());
+                QFile::remove(dirPath + QStringLiteral("/.%1.ua").arg(id));
                 continue;
             }
         }
@@ -512,6 +692,15 @@ void HttpFileBuffer::pruneCache(qint64 keepEpisodeId, qint64 keepNextId)
         if (!name.endsWith(QStringLiteral(".part")))
             finished.append(fi);
         total += fi.size();
+    }
+
+    // UA sidecars whose .part is gone (finished, pruned or deleted by hand).
+    const QFileInfoList sidecars = dir.entryInfoList({QStringLiteral(".*.ua")},
+                                                     QDir::Files | QDir::Hidden);
+    for (const QFileInfo &fi : sidecars) {
+        const QString idPart = fi.fileName().mid(1).section(QLatin1Char('.'), 0, 0);
+        if (!QFileInfo::exists(dirPath + QLatin1Char('/') + idPart + QStringLiteral(".part")))
+            QFile::remove(fi.absoluteFilePath());
     }
 
     if (total <= kMaxCacheBytes)
@@ -527,6 +716,27 @@ void HttpFileBuffer::pruneCache(qint64 keepEpisodeId, qint64 keepNextId)
         total -= fi.size();
         QFile::remove(fi.absoluteFilePath());
     }
+}
+
+int HttpFileBuffer::purgeMediaCache()
+{
+    QDir dir(mediaDir());
+    int removed = 0;
+    const QFileInfoList entries =
+        dir.entryInfoList(QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot);
+    for (const QFileInfo &fi : entries) {
+        QString name = fi.fileName();
+        const bool sidecar = name.startsWith(QLatin1Char('.')) && name.endsWith(QStringLiteral(".ua"));
+        if (sidecar)
+            name = name.mid(1);
+        bool ok = false;
+        name.section(QLatin1Char('.'), 0, 0).toLongLong(&ok);
+        if (!ok)
+            continue; // only episode files ("123.mp3", "123.part", ".123.ua")
+        if (QFile::remove(fi.absoluteFilePath()) && !sidecar)
+            ++removed;
+    }
+    return removed;
 }
 
 // ---------------------------------------------------------------------------

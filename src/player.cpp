@@ -1581,6 +1581,15 @@ int runPlayer(int argc, char **argv)
         return 0;
     if (!bus.registerService(kMprisService))
         return 0;
+    // One-time: audio cached before the generic player identity may carry
+    // stitched-in ads. This process owns the media cache and nothing is playing
+    // yet, so drop it all; episodes re-download on the next play or prefetch.
+    // Library rows (played, position) are untouched.
+    if (library.audioCacheUa() != QStringLiteral("generic-v1")) {
+        const int removed = HttpFileBuffer::purgeMediaCache();
+        library.setAudioCacheUa(QStringLiteral("generic-v1"));
+        qInfo("[podcast-cache] audio identity changed: removed %d cached episode files", removed);
+    }
     QTimer::singleShot(400, &service, &PlayerService::considerExit);
     return app.exec();
 }

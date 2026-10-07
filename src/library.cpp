@@ -531,6 +531,16 @@ qint64 Library::adjacent(qint64 episodeId, bool older, bool unplayedOnly) const
     return q.next() ? q.value(0).toLongLong() : 0;
 }
 
+QString Library::audioCacheUa() const
+{
+    return setting(QStringLiteral("audio_cache_ua"), QString());
+}
+
+void Library::setAudioCacheUa(const QString &generation)
+{
+    setSetting(QStringLiteral("audio_cache_ua"), generation);
+}
+
 QString Library::setting(const QString &key, const QString &fallback) const
 {
     QSqlQuery q(dbOf(m_connection));
