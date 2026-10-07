@@ -211,7 +211,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             icon.name: "go-previous-symbolic"
             tip: "Back"
-            onClicked: backend.closeEpisode()
+            onClicked: win.back()
         }
         Row {
             id: actions

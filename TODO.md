@@ -27,3 +27,5 @@ Work **one item at a time**. Do not start the next until the current one is done
 17. [x] **Add-feed URL dialog** — The add-by-URL dialog looks weird; restyle it to match the app's design language.
 18. [ ] **Search** — Search for podcasts and/or episodes.
 19. [x] **Queue** — Add episodes to a queue, play from it, reorder, and remove.
+20. [x] **Page navigation** — Browser-style back/forward history; mouse side buttons, Alt+Left/Right.
+21. [x] **Now Playing art** — Ctrl+wheel resizes the cover (20–100%, saved, Ctrl+0 resets) without flicker; right-click Copy / Save artwork… / Copy image URL on Now Playing art and shelf covers.

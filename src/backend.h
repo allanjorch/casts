@@ -10,6 +10,9 @@
 #include <QSet>
 #include <QStringList>
 #include <QVariantMap>
+#include <QUrl>
+
+#include <functional>
 
 class QDBusInterface;
 class QDBusServiceWatcher;
@@ -59,6 +62,7 @@ class Backend : public QObject {
     // caught-up filter cannot hide the eye that would bring shows back.
     Q_PROPERTY(int showCount READ showCount NOTIFY showCountChanged)
     Q_PROPERTY(EpisodeModel *queueModel READ queueModel CONSTANT)
+    Q_PROPERTY(double nowPlayingArtScale READ nowPlayingArtScale NOTIFY nowPlayingArtScaleChanged)
     Q_PROPERTY(int queueCount READ queueCount NOTIFY queueChanged)
 
 public:
@@ -104,6 +108,7 @@ public:
     int showCount() const { return m_showCount; }
     EpisodeModel *queueModel() { return &m_queueModel; }
     int queueCount() const { return m_queueModel.rowCount(); }
+    double nowPlayingArtScale() const { return m_library.nowPlayingArtScale(); }
 
     // Local calendar day for published timestamps (unix seconds).
     Q_INVOKABLE QString formatDay(qint64 unixSecs) const;
@@ -122,6 +127,10 @@ public:
     Q_INVOKABLE void openPlayingEpisode();
     Q_INVOKABLE void closeEpisode();
     Q_INVOKABLE void removeOpenShow();
+    // Page history checks (Main.qml navigation).
+    Q_INVOKABLE bool hasShow(qint64 showId) const;
+    Q_INVOKABLE bool hasEpisode(qint64 episodeId) const;
+    Q_INVOKABLE qint64 episodeShowId(qint64 episodeId) const;
 
     Q_INVOKABLE void playEpisode(qint64 episodeId);
     Q_INVOKABLE void togglePlayback();
@@ -157,6 +166,16 @@ public:
     // Episode details opened from the Queue page; Back returns to where we were.
     Q_INVOKABLE void openEpisodeFromQueue(qint64 episodeId);
 
+    Q_INVOKABLE void setNowPlayingArtScale(double scale);
+
+    // Artwork actions (Now Playing art, shelf covers). episodeId != 0 means that
+    // episode's art (falling back to its show cover); otherwise the show cover.
+    // Always the full-resolution original: cached download bytes or the feed URL.
+    Q_INVOKABLE QVariantMap artworkInfo(qint64 episodeId, qint64 showId) const;
+    Q_INVOKABLE void saveArtwork(qint64 episodeId, qint64 showId, const QUrl &target);
+    Q_INVOKABLE void copyArtwork(qint64 episodeId, qint64 showId);
+    Q_INVOKABLE void copyArtworkUrl(qint64 episodeId, qint64 showId);
+
     Q_INVOKABLE QVariantMap windowGeometry() const;
     Q_INVOKABLE void saveWindowGeometry(int x, int y, int width, int height, bool maximized);
     void raiseWindow();
@@ -173,6 +192,7 @@ signals:
     void filterChanged();
     void showCountChanged();
     void queueChanged();
+    void nowPlayingArtScaleChanged();
     void episodeModelDiscarded(qint64 showId);
     void raised();
 
@@ -226,6 +246,14 @@ private:
     void callPlayer(const QString &method, const QVariantList &args = {});
     void restoreLastPlayed();
     void reloadQueue();
+    struct ArtSource {
+        QString path; // local cached original, if any
+        QString url;  // remote original
+        QString title; // filename stem
+    };
+    ArtSource artSource(qint64 episodeId, qint64 showId) const;
+    // Local bytes now, or download the remote original, then call done(bytes, contentType).
+    void fetchArtwork(const ArtSource &src, std::function<void(const QByteArray &, const QString &)> done);
     QString countMessage(int count, const QString &what) const;
 
     struct PendingPlayerCall {

@@ -226,7 +226,7 @@ Rectangle {
                     font.pixelSize: theme.titleSize
                     wrapMode: TextEdit.NoWrap
                     clip: true
-                    onActivated: backend.openPlayingEpisode()
+                    onActivated: win.openEpisodePage(backend.playerEpisodeId)
                 }
             }
 

@@ -15,6 +15,7 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QVariant>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
 
@@ -27,14 +28,30 @@ public:
         if (!window || !eventIsOurs(watched))
             return false;
 
-        if (event->type() == QEvent::MouseButtonPress) {
+        // Page history: mouse side buttons (XButton1/2) anywhere in the window,
+        // including over lists, text, the player bar and popups. The app-wide
+        // filter sees them before any child MouseArea can accept them.
+        if (event->type() == QEvent::MouseButtonPress
+            || event->type() == QEvent::MouseButtonDblClick
+            || event->type() == QEvent::MouseButtonRelease) {
             const auto *mouse = static_cast<const QMouseEvent *>(event);
-            if (mouse->button() == Qt::BackButton) {
-                QMetaObject::invokeMethod(window, "navigateBack", Qt::DirectConnection);
-                return true;
-            }
-            if (mouse->button() == Qt::ForwardButton) {
-                QMetaObject::invokeMethod(window, "navigateForward", Qt::DirectConnection);
+            const Qt::MouseButton button = mouse->button();
+            if (button != Qt::BackButton && button != Qt::ForwardButton)
+                return false;
+            // Act once per physical press; swallow the rest so nothing else reacts.
+            if (event->type() != QEvent::MouseButtonRelease)
+                QMetaObject::invokeMethod(window, button == Qt::BackButton ? "back" : "forward",
+                                          Qt::DirectConnection);
+            return true;
+        }
+
+        // Dedicated Back / Forward keys (multimedia keyboards, some mice).
+        if (event->type() == QEvent::KeyPress) {
+            const auto *key = static_cast<const QKeyEvent *>(event);
+            if (key->key() == Qt::Key_Back || key->key() == Qt::Key_Forward) {
+                if (!key->isAutoRepeat())
+                    QMetaObject::invokeMethod(window, key->key() == Qt::Key_Back ? "back" : "forward",
+                                              Qt::DirectConnection);
                 return true;
             }
             return false;

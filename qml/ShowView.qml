@@ -107,7 +107,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             icon.name: "go-previous-symbolic"
             tip: "Back"
-            onClicked: backend.closeShow()
+            onClicked: win.back()
         }
         Row {
             id: actions
@@ -335,7 +335,7 @@ Item {
                     if (mouse.button === Qt.RightButton)
                         page.openMarkMenu(model.episodeId, model.played)
                     else
-                        backend.openEpisode(model.episodeId)
+                        win.openEpisodePage(model.episodeId)
                 }
                 onWheel: (wheel) => page.takeWheel(wheel)
             }

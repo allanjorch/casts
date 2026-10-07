@@ -781,3 +781,26 @@ void Library::clearQueue()
     QSqlQuery q(dbOf(m_connection));
     q.exec(QStringLiteral("DELETE FROM queue"));
 }
+
+bool Library::hasShow(qint64 showId) const
+{
+    QSqlQuery q(dbOf(m_connection));
+    q.prepare(QStringLiteral("SELECT 1 FROM shows WHERE id = ?"));
+    q.addBindValue(showId);
+    return q.exec() && q.next();
+}
+
+double Library::nowPlayingArtScale() const
+{
+    // Fraction of the largest square that fits the Now Playing page (0.2 .. 1.0).
+    bool ok = false;
+    const double value = setting(QStringLiteral("nowPlaying.artScale"), QStringLiteral("1")).toDouble(&ok);
+    if (!ok)
+        return 1.0;
+    return qBound(0.2, value, 1.0);
+}
+
+void Library::setNowPlayingArtScale(double scale)
+{
+    setSetting(QStringLiteral("nowPlaying.artScale"), QString::number(qBound(0.2, scale, 1.0), 'f', 2));
+}

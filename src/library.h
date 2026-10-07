@@ -63,6 +63,7 @@ public:
     QList<EpisodeRow> episodes(qint64 showId) const;
     EpisodeRow episode(qint64 id) const;
     QString showTitle(qint64 showId) const;
+    bool hasShow(qint64 showId) const;
     QString showImage(qint64 showId) const;
     QString showImageUrl(qint64 showId) const;
     qint64 episodeByAudioUrl(const QString &audioUrl) const;
@@ -102,6 +103,8 @@ public:
     bool shelfShowAll() const;
     void setShelfShowAll(bool showAll);
     bool episodeShowAll() const;
+    double nowPlayingArtScale() const;
+    void setNowPlayingArtScale(double scale);
     void setEpisodeShowAll(bool showAll);
 
     QStringList feedUrls() const;

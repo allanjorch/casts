@@ -312,7 +312,7 @@ Item {
                         page.menuIndex = row.index
                         rowMenu.popup()
                     } else {
-                        backend.openEpisodeFromQueue(row.model.episodeId)
+                        win.openEpisodePage(row.model.episodeId)
                     }
                 }
             }
@@ -336,7 +336,7 @@ Item {
         }
         AppMenuItem {
             text: "Episode details"
-            onTriggered: backend.openEpisodeFromQueue(page.menuEpisode)
+            onTriggered: win.openEpisodePage(page.menuEpisode)
         }
         AppMenuSeparator {}
         AppMenuItem {

@@ -1,5 +1,6 @@
 #include "backend.h"
 
+#include <cmath>
 #include <utility>
 
 #include "feed.h"
@@ -20,6 +21,10 @@
 #include <QProcess>
 #include <QCoreApplication>
 #include <QGuiApplication>
+#include <QClipboard>
+#include <QImage>
+#include <QMimeData>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTimer>
@@ -1518,4 +1523,193 @@ void Backend::saveWindowGeometry(int x, int y, int width, int height, bool maxim
 void Backend::raiseWindow()
 {
     emit raised();
+}
+
+bool Backend::hasShow(qint64 showId) const
+{
+    return showId != 0 && m_library.hasShow(showId);
+}
+
+bool Backend::hasEpisode(qint64 episodeId) const
+{
+    return episodeId != 0 && m_library.episode(episodeId).id != 0;
+}
+
+qint64 Backend::episodeShowId(qint64 episodeId) const
+{
+    return episodeId != 0 ? m_library.episode(episodeId).showId : 0;
+}
+
+void Backend::setNowPlayingArtScale(double scale)
+{
+    const double bounded = qBound(0.2, std::round(scale * 100.0) / 100.0, 1.0);
+    if (qAbs(bounded - m_library.nowPlayingArtScale()) < 0.001)
+        return;
+    m_library.setNowPlayingArtScale(bounded);
+    emit nowPlayingArtScaleChanged();
+}
+
+namespace {
+QString safeFileStem(QString name)
+{
+    name.replace(QRegularExpression(QStringLiteral("[/\\\\:*?\"<>|\\x00-\\x1f]")), QStringLiteral(" "));
+    name = name.simplified();
+    while (name.startsWith(QLatin1Char('.')))
+        name.remove(0, 1);
+    if (name.size() > 150)
+        name = name.left(150).trimmed();
+    return name.isEmpty() ? QStringLiteral("artwork") : name;
+}
+
+QString knownImageExt(const QString &suffix)
+{
+    const QString s = suffix.toLower();
+    if (s == QStringLiteral("jpeg") || s == QStringLiteral("jpg"))
+        return QStringLiteral("jpg");
+    if (s == QStringLiteral("png") || s == QStringLiteral("webp") || s == QStringLiteral("gif"))
+        return s;
+    return {};
+}
+}
+
+Backend::ArtSource Backend::artSource(qint64 episodeId, qint64 showId) const
+{
+    ArtSource src;
+    if (episodeId != 0) {
+        const EpisodeRow row = m_library.episode(episodeId);
+        if (row.id != 0) {
+            showId = row.showId;
+            const QString show = m_library.showTitle(showId);
+            src.title = show.isEmpty() ? row.title : show + QStringLiteral(" - ") + row.title;
+            if (!row.imagePath.isEmpty() && QFileInfo::exists(row.imagePath))
+                src.path = row.imagePath;
+            src.url = row.imageUrl;
+            if (!src.path.isEmpty() || !src.url.isEmpty())
+                return src;
+        }
+    }
+    if (showId == 0)
+        return src;
+    if (src.title.isEmpty())
+        src.title = m_library.showTitle(showId);
+    const QString path = m_library.showImage(showId);
+    if (!path.isEmpty() && QFileInfo::exists(path))
+        src.path = path;
+    src.url = m_library.showImageUrl(showId);
+    return src;
+}
+
+QVariantMap Backend::artworkInfo(qint64 episodeId, qint64 showId) const
+{
+    const ArtSource src = artSource(episodeId, showId);
+    QString ext;
+    if (!src.path.isEmpty())
+        ext = knownImageExt(QFileInfo(src.path).suffix());
+    if (ext.isEmpty() && !src.url.isEmpty())
+        ext = knownImageExt(QFileInfo(QUrl(src.url).path()).suffix());
+    if (ext.isEmpty())
+        ext = QStringLiteral("jpg");
+    QString folder = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+    if (folder.isEmpty())
+        folder = QDir::homePath();
+    const QString name = safeFileStem(src.title) + QLatin1Char('.') + ext;
+    QVariantMap out;
+    out.insert(QStringLiteral("available"), !src.path.isEmpty() || !src.url.isEmpty());
+    out.insert(QStringLiteral("hasUrl"), !src.url.isEmpty());
+    out.insert(QStringLiteral("url"), src.url);
+    out.insert(QStringLiteral("fileName"), name);
+    out.insert(QStringLiteral("folderUrl"), QUrl::fromLocalFile(folder));
+    out.insert(QStringLiteral("fileUrl"), QUrl::fromLocalFile(folder + QLatin1Char('/') + name));
+    return out;
+}
+
+void Backend::fetchArtwork(const ArtSource &src, std::function<void(const QByteArray &, const QString &)> done)
+{
+    if (!src.path.isEmpty()) {
+        QFile file(src.path);
+        if (file.open(QIODevice::ReadOnly)) {
+            done(file.readAll(), QString());
+            return;
+        }
+    }
+    if (src.url.isEmpty()) {
+        setStatus(QStringLiteral("No artwork to use."));
+        return;
+    }
+    QNetworkRequest request{QUrl(src.url)};
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("podcast/0.1 (Omarchy)"));
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setTransferTimeout(30000);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, done]() {
+        reply->deleteLater();
+        const QByteArray bytes = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError || bytes.size() < 32) {
+            setStatus(QStringLiteral("Could not download the artwork."));
+            return;
+        }
+        done(bytes, reply->header(QNetworkRequest::ContentTypeHeader).toString());
+    });
+}
+
+void Backend::saveArtwork(qint64 episodeId, qint64 showId, const QUrl &target)
+{
+    QString path = target.isLocalFile() ? target.toLocalFile() : target.toString();
+    if (path.isEmpty())
+        return;
+    const ArtSource src = artSource(episodeId, showId);
+    fetchArtwork(src, [this, path](const QByteArray &bytes, const QString &contentType) mutable {
+        // Keep the user's name; only fix an extension that contradicts the bytes.
+        const QString real = coverExtension(bytes, contentType);
+        const QFileInfo info(path);
+        const QString have = knownImageExt(info.suffix());
+        if (info.suffix().isEmpty())
+            path += QLatin1Char('.') + real;
+        else if (!have.isEmpty() && have != real)
+            path = info.path() + QLatin1Char('/') + info.completeBaseName() + QLatin1Char('.') + real;
+        QFile out(path);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate) || out.write(bytes) != bytes.size()) {
+            setStatus(QStringLiteral("Could not save to %1.").arg(path));
+            return;
+        }
+        out.close();
+        QString shown = path;
+        const QString home = QDir::homePath();
+        if (shown.startsWith(home + QLatin1Char('/')))
+            shown = QStringLiteral("~") + shown.mid(home.size());
+        setStatus(QStringLiteral("Saved to %1").arg(shown));
+    });
+}
+
+void Backend::copyArtwork(qint64 episodeId, qint64 showId)
+{
+    const ArtSource src = artSource(episodeId, showId);
+    fetchArtwork(src, [this](const QByteArray &bytes, const QString &) {
+        QImage image;
+        if (!image.loadFromData(bytes)) {
+            setStatus(QStringLiteral("Could not read the artwork."));
+            return;
+        }
+        // Full-resolution pixels, plus the original encoded bytes for apps that take them.
+        auto *mime = new QMimeData;
+        mime->setImageData(image);
+        const QString ext = coverExtension(bytes, QString());
+        const QString type = ext == QStringLiteral("jpg") ? QStringLiteral("image/jpeg")
+                                                          : QStringLiteral("image/") + ext;
+        if (type != QStringLiteral("image/png"))
+            mime->setData(type, bytes);
+        QGuiApplication::clipboard()->setMimeData(mime);
+        setStatus(QStringLiteral("Image copied (%1×%2).").arg(image.width()).arg(image.height()));
+    });
+}
+
+void Backend::copyArtworkUrl(qint64 episodeId, qint64 showId)
+{
+    const ArtSource src = artSource(episodeId, showId);
+    if (src.url.isEmpty()) {
+        setStatus(QStringLiteral("This artwork has no web address."));
+        return;
+    }
+    QGuiApplication::clipboard()->setText(src.url);
+    setStatus(QStringLiteral("Image URL copied."));
 }

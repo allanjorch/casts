@@ -314,7 +314,13 @@ Item {
                 enabled: true
                 hoverEnabled: true
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                onClicked: backend.openShow(model.showId)
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onClicked: function(mouse) {
+                    if (mouse.button === Qt.RightButton)
+                        shelf.openCoverMenu(model.showId)
+                    else
+                        win.openShowPage(model.showId)
+                }
                 onWheel: (wheel) => shelf.takeWheel(wheel)
                 Rectangle {
                     anchors.fill: cover
@@ -448,9 +454,42 @@ Item {
                 enabled: true
                 hoverEnabled: true
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                onClicked: backend.openShow(model.showId)
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onClicked: function(mouse) {
+                    if (mouse.button === Qt.RightButton)
+                        shelf.openCoverMenu(model.showId)
+                    else
+                        win.openShowPage(model.showId)
+                }
                 onWheel: (wheel) => shelf.takeWheel(wheel)
             }
+        }
+    }
+
+    // Right-click on a show cover (gallery tile or list row).
+    property real coverMenuShow: 0
+    function openCoverMenu(showId) {
+        coverMenuShow = showId
+        coverMenu.info = backend.artworkInfo(0, showId)
+        coverMenu.popup()
+    }
+    AppMenu {
+        id: coverMenu
+        property var info: ({})
+        AppMenuItem {
+            text: "Copy"
+            enabled: coverMenu.info.available === true
+            onTriggered: backend.copyArtwork(0, shelf.coverMenuShow)
+        }
+        AppMenuItem {
+            text: "Save artwork…"
+            enabled: coverMenu.info.available === true
+            onTriggered: win.saveArtworkAs(0, shelf.coverMenuShow)
+        }
+        AppMenuItem {
+            text: "Copy image URL"
+            enabled: coverMenu.info.hasUrl === true
+            onTriggered: backend.copyArtworkUrl(0, shelf.coverMenuShow)
         }
     }
 

@@ -12,8 +12,11 @@ ApplicationWindow {
     minimumWidth: 720
     minimumHeight: 480
     visible: true
-    title: backend.openEpisodeId !== 0 ? backend.openEpisodeTitle
-         : backend.openShowId === 0 ? "Podcasts" : backend.openShowTitle
+    title: pageKind === "episode" ? backend.openEpisodeTitle
+         : pageKind === "show" ? backend.openShowTitle
+         : pageKind === "queue" ? "Queue"
+         : pageKind === "nowPlaying" ? backend.playerTitle
+         : "Podcasts"
     color: theme.background
     font.family: "monospace"
     font.weight: Font.Normal
@@ -33,8 +36,6 @@ ApplicationWindow {
     property bool confirmAll: false
     property bool confirmLibrary: false
     property bool confirmRemove: false
-    property bool nowPlayingOpen: false
-    property bool queueOpen: false
     property bool confirmQueue: false
     property rect normalGeometry: Qt.rect(x, y, width, height)
     property bool wasMaximized: false
@@ -84,111 +85,205 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         onActivated: win.close()
     }
-    // Short forward stack for mouse Forward after Back (browser-style).
-    property var forwardStack: []
+    // ---- Page navigation: one browser-style history -------------------------
+    // Entries are {kind, showId, episodeId}; kind is shelf | show | episode | queue
+    // | nowPlaying. The visible page is derived from history[historyIndex] only.
+    // Modal dialogs are not entries; back() closes them first. history[0] is
+    // always the shelf, so Back on any other page has somewhere to go.
+    readonly property int historyLimit: 60
+    property var history: [{ kind: "shelf", showId: 0, episodeId: 0 }]
+    property int historyIndex: 0
+    readonly property var currentPage: history[Math.max(0, Math.min(historyIndex, history.length - 1))]
+    readonly property string pageKind: currentPage.kind
+    readonly property bool canGoBack: modalOpen || historyIndex > 0
+    readonly property bool canGoForward: !modalOpen && historyIndex < history.length - 1
+    readonly property bool modalOpen: addOpen || confirmAll || confirmLibrary || confirmRemove || confirmQueue
+    readonly property bool nowPlayingOpen: pageKind === "nowPlaying"
+    readonly property bool queueOpen: pageKind === "queue"
+    // True while we drive backend.open*/close*, so its change signals are not
+    // mistaken for the backend dropping a page on its own.
     property bool navGuard: false
 
-    function clearForward() {
-        if (forwardStack.length > 0)
-            forwardStack = []
+    function makeEntry(kind, showId, episodeId) {
+        return { kind: kind, showId: showId || 0, episodeId: episodeId || 0 }
     }
 
-    function pushForward(entry) {
-        forwardStack = forwardStack.concat([entry]).slice(-8)
+    function sameEntry(a, b) {
+        return a.kind === b.kind && a.showId === b.showId && a.episodeId === b.episodeId
     }
 
-    function navigateBack() {
+    function navigate(entry) {
+        if (sameEntry(entry, currentPage)) {
+            applyPage()
+            return
+        }
+        var list = history.slice(0, historyIndex + 1)
+        list.push(entry)
+        // Cap the length but keep the shelf root at 0.
+        while (list.length > historyLimit)
+            list.splice(1, 1)
+        history = list
+        historyIndex = list.length - 1
+        applyPage()
+    }
+
+    function closeModals() {
+        if (!modalOpen)
+            return false
+        addOpen = false
+        confirmAll = false
+        confirmLibrary = false
+        confirmRemove = false
+        confirmQueue = false
+        return true
+    }
+
+    function back() {
+        if (closeModals())
+            return
+        if (historyIndex <= 0)
+            return
+        historyIndex = historyIndex - 1
+        applyPage()
+    }
+
+    function forward() {
+        if (modalOpen || historyIndex >= history.length - 1)
+            return
+        historyIndex = historyIndex + 1
+        applyPage()
+    }
+
+    // Kept for the C++ input filter and older call sites.
+    function navigateBack() { back() }
+    function navigateForward() { forward() }
+
+    function openShowPage(showId) { navigate(makeEntry("show", showId, 0)) }
+    function openEpisodePage(episodeId) {
+        navigate(makeEntry("episode", backend.episodeShowId(episodeId), episodeId))
+    }
+    function openQueuePage() { navigate(makeEntry("queue", 0, 0)) }
+    function openNowPlayingPage() {
+        if (backend.playerEpisodeId !== 0)
+            navigate(makeEntry("nowPlaying", 0, 0))
+    }
+
+    // Is this entry still showable? Shows/episodes can vanish under us.
+    function entryValid(entry) {
+        if (entry.kind === "show")
+            return backend.hasShow(entry.showId)
+        if (entry.kind === "episode")
+            return backend.hasEpisode(entry.episodeId)
+        if (entry.kind === "nowPlaying")
+            return backend.playerEpisodeId !== 0
+        return true
+    }
+
+    // Drop entries matching `gone`, fold neighbours that became duplicates, and
+    // keep the index on the nearest surviving page at or before the current one.
+    function pruneHistory(gone) {
+        var list = []
+        var index = 0
+        for (var i = 0; i < history.length; ++i) {
+            var entry = history[i]
+            var keep = i === 0 || !gone(entry)
+            if (keep && list.length > 0 && sameEntry(list[list.length - 1], entry))
+                keep = false
+            if (keep)
+                list.push(entry)
+            if (i <= historyIndex)
+                index = Math.max(0, list.length - 1)
+        }
+        if (list.length === 0 || list[0].kind !== "shelf")
+            list.unshift(makeEntry("shelf", 0, 0))
+        var changed = list.length !== history.length || index !== historyIndex
+        if (!changed)
+            return
+        history = list
+        historyIndex = Math.min(index, list.length - 1)
+        applyPage()
+    }
+
+    // Make the backend match the current entry. Instant: no animation, and warm
+    // ShowView pages are only hidden/shown.
+    function applyPage() {
+        var entry = currentPage
+        if (!entryValid(entry)) {
+            pruneHistory(function(e) { return !entryValid(e) })
+            return
+        }
         navGuard = true
-        if (nowPlayingOpen) {
-            pushForward({ kind: "nowPlaying" })
-            nowPlayingOpen = false
-        } else if (confirmQueue) {
-            confirmQueue = false
-        } else if (queueOpen && backend.openEpisodeId === 0) {
-            queueOpen = false
-        } else if (addOpen) {
-            addOpen = false
-        } else if (confirmAll) {
-            confirmAll = false
-        } else if (confirmLibrary) {
-            confirmLibrary = false
-        } else if (confirmRemove) {
-            confirmRemove = false
-        } else if (backend.openEpisodeId !== 0) {
-            var epId = backend.openEpisodeId
-            var showWas = backend.openShowId
-            backend.closeEpisode()
-            // openPlayingEpisode closes through to the shelf; remember that path.
-            if (backend.openShowId === 0 && showWas !== 0)
-                pushForward({ kind: "playingEpisode", id: epId })
-            else
-                pushForward({ kind: "episode", id: epId })
-        } else if (backend.openShowId !== 0) {
-            pushForward({ kind: "show", id: backend.openShowId })
+        if (entry.kind === "shelf") {
             backend.closeShow()
+        } else if (entry.kind === "show") {
+            if (backend.openShowId === entry.showId && backend.openEpisodeId !== 0)
+                backend.closeEpisode()
+            else if (backend.openShowId !== entry.showId)
+                backend.openShow(entry.showId)
+        } else if (entry.kind === "episode") {
+            if (backend.openEpisodeId !== entry.episodeId)
+                backend.openEpisode(entry.episodeId)
         }
+        // queue / nowPlaying cover the content and leave the backend as is.
         navGuard = false
     }
 
-    function navigateForward() {
-        if (forwardStack.length === 0)
-            return
-        if (addOpen || confirmAll || confirmLibrary || confirmRemove)
-            return
-        var stack = forwardStack.slice()
-        var entry = stack.pop()
-        forwardStack = stack
-        navGuard = true
-        if (entry.kind === "nowPlaying") {
-            if (backend.playerEpisodeId !== 0)
-                nowPlayingOpen = true
-        } else if (entry.kind === "playingEpisode") {
-            if (backend.playerEpisodeId === entry.id)
-                backend.openPlayingEpisode()
-            else
-                backend.openEpisode(entry.id)
-        } else if (entry.kind === "episode") {
-            backend.openEpisode(entry.id)
-        } else if (entry.kind === "show") {
-            backend.openShow(entry.id)
-        }
-        navGuard = false
+    // Does the backend still show what the current entry asks for?
+    function backendMatchesPage() {
+        var entry = currentPage
+        if (entry.kind === "shelf")
+            return backend.openShowId === 0
+        if (entry.kind === "show")
+            return backend.openShowId === entry.showId && backend.openEpisodeId === 0
+        if (entry.kind === "episode")
+            return backend.openEpisodeId === entry.episodeId
+        return true
+    }
+
+    // The backend changed pages on its own (show removed, episode vanished in a
+    // refresh, ...). Re-sync after the backend call finishes: applyPage drops
+    // entries that are no longer valid and reopens the right page.
+    function backendMoved() {
+        if (!navGuard && !backendMatchesPage())
+            Qt.callLater(function() { if (!backendMatchesPage()) applyPage() })
     }
 
     Connections {
         target: backend
         function onOpenShowChanged() {
-            if (!navGuard && backend.openShowId !== 0)
-                clearForward()
             rememberShow(backend.openShowId)
+            backendMoved()
+        }
+        function onOpenEpisodeChanged() {
+            backendMoved()
         }
         function onEpisodeModelDiscarded(showId) {
             forgetShow(showId)
+            Qt.callLater(function() { pruneHistory(function(e) { return !entryValid(e) }) })
         }
-        function onOpenEpisodeChanged() {
-            if (!navGuard && backend.openEpisodeId !== 0)
-                clearForward()
+        function onPlayerStateChanged() {
+            if (backend.playerEpisodeId === 0)
+                pruneHistory(function(e) { return e.kind === "nowPlaying" })
         }
-    }
-    onNowPlayingOpenChanged: {
-        if (!navGuard && nowPlayingOpen)
-            clearForward()
     }
 
+    // Keyboard: Esc / Backspace / Alt+Left = back, Alt+Right = forward.
+    // Qt::Key_Back / Key_Forward and the mouse side buttons are caught app-wide
+    // in main.cpp (WindowInputFilter) so child MouseAreas and popups cannot eat them.
     Shortcut {
         sequence: "Escape"
         context: Qt.ApplicationShortcut
-        onActivated: navigateBack()
+        onActivated: back()
     }
     Shortcut {
         sequence: "Alt+Left"
         context: Qt.ApplicationShortcut
-        onActivated: navigateBack()
+        onActivated: back()
     }
     Shortcut {
         sequence: "Alt+Right"
         context: Qt.ApplicationShortcut
-        onActivated: navigateForward()
+        onActivated: forward()
     }
     Shortcut {
         sequence: "Backspace"
@@ -198,7 +293,7 @@ ApplicationWindow {
             var item = win.activeFocusItem
             return !(item instanceof TextInput || item instanceof TextEdit)
         }
-        onActivated: navigateBack()
+        onActivated: back()
     }
     function rememberShow(showId) {
         if (!showId)
@@ -227,9 +322,16 @@ ApplicationWindow {
     }
 
     function zoomFromWheel(delta) {
-        if (addOpen || confirmAll || confirmLibrary || confirmRemove || confirmQueue || queueOpen || nowPlayingOpen || backend.openEpisodeId !== 0)
+        if (modalOpen)
             return false
-        if (backend.openShowId !== 0) {
+        // Now Playing: Ctrl+wheel sizes the art (and never reaches the shelf zoom).
+        if (pageKind === "nowPlaying") {
+            nowPlayingPage.applyArtZoom(delta)
+            return true
+        }
+        if (pageKind !== "shelf" && pageKind !== "show")
+            return false
+        if (pageKind === "show") {
             var page = activeShow()
             if (page)
                 page.applyZoomDelta(delta)
@@ -248,9 +350,9 @@ ApplicationWindow {
     Shortcut {
         sequences: [StandardKey.ZoomIn, "Ctrl+="]
         context: Qt.ApplicationShortcut
-        enabled: backend.openEpisodeId === 0 && !addOpen && !confirmAll && !confirmLibrary && !confirmRemove && !nowPlayingOpen
+        enabled: !modalOpen && (pageKind === "shelf" || pageKind === "show")
         onActivated: {
-            if (backend.openShowId !== 0) {
+            if (pageKind === "show") {
                 var page = win.activeShow()
                 if (page)
                     page.zoomIn()
@@ -262,9 +364,9 @@ ApplicationWindow {
     Shortcut {
         sequence: StandardKey.ZoomOut
         context: Qt.ApplicationShortcut
-        enabled: backend.openEpisodeId === 0 && !addOpen && !confirmAll && !confirmLibrary && !confirmRemove && !nowPlayingOpen
+        enabled: !modalOpen && (pageKind === "shelf" || pageKind === "show")
         onActivated: {
-            if (backend.openShowId !== 0) {
+            if (pageKind === "show") {
                 var page = win.activeShow()
                 if (page)
                     page.zoomOut()
@@ -290,7 +392,7 @@ ApplicationWindow {
                 id: shelfView
                 anchors.fill: parent
                 z: 0
-                visible: backend.openShowId === 0
+                visible: win.pageKind === "shelf"
                 onAddRequested: {
                     feedField.text = ""
                     win.addOpen = true
@@ -298,7 +400,7 @@ ApplicationWindow {
                 }
                 onImportRequested: opmlDialog.open()
                 onMarkLibraryRequested: win.confirmLibrary = true
-                onQueueRequested: win.queueOpen = true
+                onQueueRequested: win.openQueuePage()
             }
 
             // One episode page per visited show. Back only hides it, so the
@@ -312,35 +414,34 @@ ApplicationWindow {
                     episodeModel: backend.episodesFor(model.showId)
                     anchors.fill: parent
                     z: 1
-                    visible: backend.openShowId === showId && backend.openEpisodeId === 0
+                    visible: win.pageKind === "show" && win.currentPage.showId === showId
                     onMarkAllRequested: win.confirmAll = true
                     onRemoveRequested: win.confirmRemove = true
-                    onQueueRequested: win.queueOpen = true
+                    onQueueRequested: win.openQueuePage()
                 }
             }
 
             EpisodeView {
                 anchors.fill: parent
                 z: 2
-                visible: backend.openEpisodeId !== 0
+                visible: win.pageKind === "episode"
                 onMarkAllRequested: win.confirmAll = true
             }
 
-            // Below EpisodeView so details opened from a queue row sit on top,
-            // and Back from them lands on the queue again.
             QueueView {
                 anchors.fill: parent
                 z: 1.5
-                visible: win.queueOpen && backend.openEpisodeId === 0
-                onDismissRequested: win.queueOpen = false
+                visible: win.pageKind === "queue"
+                onDismissRequested: win.back()
                 onClearRequested: win.confirmQueue = true
             }
 
             NowPlaying {
+                id: nowPlayingPage
                 anchors.fill: parent
                 z: 3
-                visible: win.nowPlayingOpen && backend.playerEpisodeId !== 0
-                onDismissRequested: win.nowPlayingOpen = false
+                visible: win.pageKind === "nowPlaying" && backend.playerEpisodeId !== 0
+                onDismissRequested: win.back()
             }
         }
 
@@ -348,15 +449,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             visible: backend.playerEpisodeId !== 0
             onMarkAllRequested: win.confirmAll = true
-            onNowPlayingRequested: win.nowPlayingOpen = true
-        }
-    }
-
-    Connections {
-        target: backend
-        function onPlayerStateChanged() {
-            if (backend.playerEpisodeId === 0)
-                win.nowPlayingOpen = false
+            onNowPlayingRequested: win.openNowPlayingPage()
         }
     }
 
@@ -496,6 +589,33 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    // Shared "Save artwork…" dialog (Now Playing art, shelf covers).
+    function saveArtworkAs(episodeId, showId) {
+        var info = backend.artworkInfo(episodeId, showId)
+        if (!info.available)
+            return
+        artSaveDialog.episodeId = episodeId
+        artSaveDialog.showId = showId
+        artSaveDialog.currentFolder = info.folderUrl
+        artSaveDialog.selectedFile = info.fileUrl
+        artSaveDialog.open()
+    }
+    FileDialog {
+        id: artSaveDialog
+        property real episodeId: 0
+        property real showId: 0
+        title: "Save artwork"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["Images (*.jpg *.jpeg *.png *.webp *.gif)", "All files (*)"]
+        onAccepted: backend.saveArtwork(episodeId, showId, selectedFile)
+    }
+    Shortcut {
+        sequence: "Ctrl+0"
+        context: Qt.ApplicationShortcut
+        enabled: pageKind === "nowPlaying" && !modalOpen
+        onActivated: backend.setNowPlayingArtScale(1.0)
     }
 
     FileDialog {
