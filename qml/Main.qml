@@ -383,11 +383,24 @@ ApplicationWindow {
                 TextField {
                     id: feedField
                     width: parent.width
-                    placeholderText: "https://example.com/feed.xml"
+                    // Plain in-box hint instead of Material's floating label:
+                    // shown only while the field is empty, no animation.
                     color: theme.foreground
                     font.pixelSize: theme.body
                     font.weight: Font.Normal
-                    placeholderTextColor: theme.dim
+                    topPadding: 10
+                    bottomPadding: 10
+                    leftPadding: 10
+                    rightPadding: 10
+                    verticalAlignment: TextInput.AlignVCenter
+                    Text {
+                        x: feedField.leftPadding
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: feedField.length === 0 && feedField.preeditText.length === 0
+                        text: "https://example.com/feed.xml"
+                        color: theme.dim
+                        font: feedField.font
+                    }
                     Material.accent: theme.accent
                     onAccepted: submitFeed()
                     background: Rectangle {
