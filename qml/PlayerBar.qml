@@ -154,6 +154,14 @@ Rectangle {
                         enabled: true
                         onClicked: bar.nudge(30)
                     }
+                    IconButton {
+                        // queueCount / playerEpisodeId re-run the lookup on any queue or track change.
+                        visible: backend.queueCount > 0 && backend.playerEpisodeId >= 0
+                                 && backend.nextQueuedId() !== 0
+                        icon.name: "media-skip-forward-symbolic"
+                        tip: "Next in queue"
+                        onClicked: backend.skipToNextQueued()
+                    }
                 }
                 Row {
                     id: extras

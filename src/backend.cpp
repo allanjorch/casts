@@ -90,6 +90,7 @@ Backend::Backend(Library &library, QObject *parent)
     m_playerRate = m_library.rate();
     m_playerVolume = m_library.volume();
     reloadShows();
+    reloadQueue();
     auto *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &Backend::pollPlayer);
     timer->start(500);
@@ -1268,6 +1269,7 @@ void Backend::applyPlayerState(const QVariantMap &state)
         || qAbs(rate - m_playerRate) > 0.001 || qAbs(volume - m_playerVolume) > 0.001
         || qAbs(duration - m_playerDuration) > 0.5;
     const bool playedFlipped = played != m_sawPlayed && episodeId != 0;
+    const bool episodeSwitched = episodeId != m_playerEpisodeId && episodeId != 0;
     m_sawPlayed = played;
 
     m_playerEpisodeId = episodeId;
@@ -1291,7 +1293,101 @@ void Backend::applyPlayerState(const QVariantMap &state)
     if (playedFlipped) {
         reloadEpisodes();
         reloadShows();
+        reloadQueue();
     }
+    if (episodeSwitched) {
+        // The player drops a finished episode from the queue; pick that up.
+        reloadQueue();
+    }
+}
+
+void Backend::reloadQueue()
+{
+    const int before = m_queueModel.rowCount();
+    const QList<qint64> oldIds = m_queueModel.ids();
+    m_queueModel.setRows(m_library.queue());
+    if (before != m_queueModel.rowCount() || oldIds != m_queueModel.ids())
+        emit queueChanged();
+}
+
+void Backend::addToQueue(qint64 episodeId)
+{
+    if (episodeId == 0)
+        return;
+    m_library.addToQueue(episodeId, false);
+    reloadQueue();
+    setStatus(QStringLiteral("Added to queue."));
+}
+
+void Backend::playNext(qint64 episodeId)
+{
+    if (episodeId == 0)
+        return;
+    m_library.addToQueue(episodeId, true);
+    reloadQueue();
+    setStatus(QStringLiteral("Playing next."));
+}
+
+void Backend::removeFromQueue(qint64 episodeId)
+{
+    if (m_library.removeFromQueue(episodeId)) {
+        reloadQueue();
+        setStatus(QStringLiteral("Removed from queue."));
+    }
+}
+
+void Backend::moveInQueue(int from, int to)
+{
+    if (!m_queueModel.moveRow(from, to))
+        return;
+    m_library.setQueueOrder(m_queueModel.ids());
+    emit queueChanged();
+}
+
+void Backend::clearQueue()
+{
+    m_library.clearQueue();
+    reloadQueue();
+    setStatus(QStringLiteral("Queue cleared."));
+}
+
+bool Backend::isQueued(qint64 episodeId) const
+{
+    return m_queueModel.ids().contains(episodeId);
+}
+
+void Backend::playFromQueue(qint64 episodeId)
+{
+    if (episodeId == 0)
+        return;
+    // Starting a queued episode leaves it in place; it only leaves on finish.
+    if (m_playerEpisodeId == episodeId && m_playerStatus == QStringLiteral("playing"))
+        return;
+    playEpisode(episodeId);
+}
+
+qint64 Backend::nextQueuedId() const
+{
+    const QList<qint64> ids = m_queueModel.ids();
+    const int at = ids.indexOf(m_playerEpisodeId);
+    if (at < 0)
+        return ids.isEmpty() ? 0 : ids.first();
+    return at + 1 < ids.size() ? ids.at(at + 1) : 0;
+}
+
+void Backend::skipToNextQueued()
+{
+    const qint64 next = nextQueuedId();
+    if (next != 0)
+        playEpisode(next);
+}
+
+void Backend::openEpisodeFromQueue(qint64 episodeId)
+{
+    const bool fromShelf = m_openShowId == 0;
+    openEpisode(episodeId);
+    if (fromShelf)
+        m_returnToShelfOnClose = true;
 }
 
 void Backend::maybeAutoRefreshOnLaunch()

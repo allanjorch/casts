@@ -320,6 +320,52 @@ int runSelfTest(int argc, char **argv)
     }
 
     {
+        QTemporaryDir qdir;
+        Library qlib(qdir.filePath(QStringLiteral("queue.db")));
+        QString qerr;
+        const auto parsed = parseFeed(rss, QUrl(QStringLiteral("https://example.com/q.xml")), &qerr);
+        if (parsed) {
+            const qint64 showId = qlib.upsertShow(QStringLiteral("https://example.com/q.xml"), *parsed);
+            const auto eps = qlib.episodes(showId);
+            check(eps.size() >= 3, "queue fixture episodes");
+            if (eps.size() >= 3) {
+                const qint64 a = eps.at(0).id, b = eps.at(1).id, c = eps.at(2).id;
+                check(qlib.queueIds().isEmpty(), "queue starts empty");
+                qlib.addToQueue(a, false);
+                qlib.addToQueue(b, false);
+                qlib.addToQueue(c, true);
+                check(qlib.queueIds() == QList<qint64>({c, a, b}), "queue add / play next order");
+                check(qlib.isQueued(a) && qlib.queueHead() == c, "queue head and membership");
+                qlib.addToQueue(a, false);
+                check(qlib.queueIds() == QList<qint64>({c, b, a}), "re-add moves to end, no duplicate");
+                qlib.setQueueOrder({a, c, b});
+                check(qlib.queueIds() == QList<qint64>({a, c, b}), "queue reorder persists");
+                check(qlib.removeFromQueue(c) && !qlib.isQueued(c), "queue remove");
+                check(!qlib.removeFromQueue(c), "queue remove twice is a no-op");
+                // Lifetime: queue is now {a, b}.
+                qlib.markPlayed(a, true);
+                check(qlib.isQueued(a), "manual mark played keeps it queued");
+                check(qlib.queueAfter(a) == b, "next after a queued item is the one after it");
+                check(qlib.queueAfter(b) == 0, "nothing after the last queued item");
+                check(qlib.queueAfter(c) == a, "unqueued current goes to the queue top");
+                qlib.addToQueue(c, false); // {a, b, c}
+                check(qlib.finishQueued(b) == c, "finishing b plays c (picked before removal)");
+                check(qlib.queueIds() == QList<qint64>({a, c}), "finish removes only the finished one");
+                check(qlib.finishQueued(b) == a, "finishing an unqueued episode plays the top");
+                check(qlib.queueIds() == QList<qint64>({a, c}), "finishing an unqueued episode removes nothing");
+                check(qlib.finishQueued(c) == 0 && qlib.queueIds() == QList<qint64>({a}),
+                      "finishing the last item falls back (0) and removes it");
+                qlib.addToQueue(b, false); // {a, b}
+                const auto rows = qlib.queue();
+                check(rows.size() == 2 && rows.at(0).showTitle == QStringLiteral("Sample Show"), "queue rows carry show title");
+                qlib.removeShow(showId);
+                check(qlib.queueIds().isEmpty(), "removing a show drops its queued episodes");
+                qlib.clearQueue();
+            }
+        }
+    }
+
+    {
         QTemporaryDir covers;
         const QString path = covers.filePath(QStringLiteral("episode art.jpg"));
         QFile file(path);

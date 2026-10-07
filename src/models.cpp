@@ -24,7 +24,8 @@ bool sameEpisode(const EpisodeRow &a, const EpisodeRow &b)
         && a.published == b.published
         && a.durationSecs == b.durationSecs
         && a.played == b.played
-        && a.positionMs == b.positionMs;
+        && a.positionMs == b.positionMs
+        && a.showTitle == b.showTitle;
 }
 }
 
@@ -115,6 +116,8 @@ QVariant EpisodeModel::data(const QModelIndex &index, int role) const
         // Memory-cached local file. A plain file URL is decoded again as soon as
         // Qt Quick evicts its ~2 MB cache of unreferenced images.
         return localCoverSource(row.imagePath);
+    case ShowTitleRole:
+        return row.showTitle;
     default:
         return {};
     }
@@ -133,6 +136,7 @@ QHash<int, QByteArray> EpisodeModel::roleNames() const
         {PositionRole, "positionMs"},
         {AudioRole, "audioUrl"},
         {CoverRole, "cover"},
+        {ShowTitleRole, "showTitle"},
     };
 }
 
@@ -187,4 +191,24 @@ void EpisodeModel::setImagePath(qint64 episodeId, const QString &imagePath)
         emit dataChanged(idx, idx, {CoverRole});
         return;
     }
+}
+
+bool EpisodeModel::moveRow(int from, int to)
+{
+    if (from < 0 || to < 0 || from >= m_rows.size() || to >= m_rows.size() || from == to)
+        return false;
+    // beginMoveRows wants the destination as the index *before* which rows land.
+    if (!beginMoveRows(QModelIndex(), from, from, QModelIndex(), to > from ? to + 1 : to))
+        return false;
+    m_rows.move(from, to);
+    endMoveRows();
+    return true;
+}
+
+QList<qint64> EpisodeModel::ids() const
+{
+    QList<qint64> out;
+    for (const auto &row : m_rows)
+        out.append(row.id);
+    return out;
 }

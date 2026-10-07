@@ -26,4 +26,4 @@ Work **one item at a time**. Do not start the next until the current one is done
 16. [ ] **Scroll look and feel** — Revisit how scrolling looks to a person: motion, distance, and the thin scrollbar, not just that the wheel moves.
 17. [x] **Add-feed URL dialog** — The add-by-URL dialog looks weird; restyle it to match the app's design language.
 18. [ ] **Search** — Search for podcasts and/or episodes.
-19. [ ] **Queue** — Add episodes to a queue, play from it, reorder, and remove.
+19. [x] **Queue** — Add episodes to a queue, play from it, reorder, and remove.

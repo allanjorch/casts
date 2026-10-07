@@ -229,6 +229,15 @@ Item {
                 onClicked: backend.playEpisode(backend.openEpisodeId)
             }
             IconButton {
+                // queueCount in the binding re-evaluates isQueued when the queue changes.
+                readonly property bool queued: backend.queueCount >= 0 && backend.isQueued(backend.openEpisodeId)
+                icon.source: queued ? "qrc:/icons/queue-remove-symbolic.svg"
+                                    : "qrc:/icons/queue-add-symbolic.svg"
+                tip: queued ? "Remove from queue" : "Add to queue"
+                onClicked: queued ? backend.removeFromQueue(backend.openEpisodeId)
+                                  : backend.addToQueue(backend.openEpisodeId)
+            }
+            IconButton {
                 icon.name: "check-plain-symbolic"
                 tip: "Mark"
                 onClicked: {

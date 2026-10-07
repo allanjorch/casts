@@ -34,6 +34,8 @@ ApplicationWindow {
     property bool confirmLibrary: false
     property bool confirmRemove: false
     property bool nowPlayingOpen: false
+    property bool queueOpen: false
+    property bool confirmQueue: false
     property rect normalGeometry: Qt.rect(x, y, width, height)
     property bool wasMaximized: false
 
@@ -100,6 +102,10 @@ ApplicationWindow {
         if (nowPlayingOpen) {
             pushForward({ kind: "nowPlaying" })
             nowPlayingOpen = false
+        } else if (confirmQueue) {
+            confirmQueue = false
+        } else if (queueOpen && backend.openEpisodeId === 0) {
+            queueOpen = false
         } else if (addOpen) {
             addOpen = false
         } else if (confirmAll) {
@@ -221,7 +227,7 @@ ApplicationWindow {
     }
 
     function zoomFromWheel(delta) {
-        if (addOpen || confirmAll || confirmLibrary || confirmRemove || nowPlayingOpen || backend.openEpisodeId !== 0)
+        if (addOpen || confirmAll || confirmLibrary || confirmRemove || confirmQueue || queueOpen || nowPlayingOpen || backend.openEpisodeId !== 0)
             return false
         if (backend.openShowId !== 0) {
             var page = activeShow()
@@ -292,6 +298,7 @@ ApplicationWindow {
                 }
                 onImportRequested: opmlDialog.open()
                 onMarkLibraryRequested: win.confirmLibrary = true
+                onQueueRequested: win.queueOpen = true
             }
 
             // One episode page per visited show. Back only hides it, so the
@@ -308,6 +315,7 @@ ApplicationWindow {
                     visible: backend.openShowId === showId && backend.openEpisodeId === 0
                     onMarkAllRequested: win.confirmAll = true
                     onRemoveRequested: win.confirmRemove = true
+                    onQueueRequested: win.queueOpen = true
                 }
             }
 
@@ -316,6 +324,16 @@ ApplicationWindow {
                 z: 2
                 visible: backend.openEpisodeId !== 0
                 onMarkAllRequested: win.confirmAll = true
+            }
+
+            // Below EpisodeView so details opened from a queue row sit on top,
+            // and Back from them lands on the queue again.
+            QueueView {
+                anchors.fill: parent
+                z: 1.5
+                visible: win.queueOpen && backend.openEpisodeId === 0
+                onDismissRequested: win.queueOpen = false
+                onClearRequested: win.confirmQueue = true
             }
 
             NowPlaying {
@@ -344,7 +362,7 @@ ApplicationWindow {
 
     Rectangle {
         anchors.fill: parent
-        visible: addOpen || confirmAll || confirmLibrary || confirmRemove
+        visible: addOpen || confirmAll || confirmLibrary || confirmRemove || confirmQueue
         color: Qt.rgba(0, 0, 0, 0.45)
 
         MouseArea {
@@ -354,6 +372,7 @@ ApplicationWindow {
                 confirmAll = false
                 confirmLibrary = false
                 confirmRemove = false
+                confirmQueue = false
             }
         }
 
@@ -436,7 +455,9 @@ ApplicationWindow {
                     color: theme.foreground
                     font.pixelSize: theme.body
                     font.weight: Font.Normal
-                    text: confirmRemove
+                    text: confirmQueue
+                          ? "Clear the queue? " + backend.queueCount + (backend.queueCount === 1 ? " episode" : " episodes") + " will be removed from it."
+                          : confirmRemove
                           ? "Remove " + backend.openShowTitle + "? Playback history for this show goes with it."
                           : confirmLibrary
                             ? "Mark every episode of every podcast as played?"
@@ -447,9 +468,11 @@ ApplicationWindow {
                 Row {
                     spacing: 8
                     TextButton {
-                        label: confirmRemove ? "Remove" : "Mark all as played"
+                        label: confirmQueue ? "Clear queue" : confirmRemove ? "Remove" : "Mark all as played"
                         onClicked: {
-                            if (confirmRemove)
+                            if (confirmQueue)
+                                backend.clearQueue()
+                            else if (confirmRemove)
                                 backend.removeOpenShow()
                             else if (confirmLibrary)
                                 backend.markLibraryPlayed()
@@ -458,6 +481,7 @@ ApplicationWindow {
                             confirmAll = false
                             confirmLibrary = false
                             confirmRemove = false
+                            confirmQueue = false
                         }
                     }
                     TextButton {
@@ -466,6 +490,7 @@ ApplicationWindow {
                             confirmAll = false
                             confirmLibrary = false
                             confirmRemove = false
+                            confirmQueue = false
                         }
                     }
                 }

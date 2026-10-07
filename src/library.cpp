@@ -88,6 +88,10 @@ bool Library::migrate()
             "CREATE TABLE IF NOT EXISTS settings ("
             " key TEXT PRIMARY KEY,"
             " value TEXT NOT NULL)"),
+        QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS queue ("
+            " episode_id INTEGER PRIMARY KEY REFERENCES episodes(id) ON DELETE CASCADE,"
+            " position INTEGER NOT NULL)"),
     };
     for (const auto &sql : statements) {
         if (!q.exec(sql)) {
@@ -676,4 +680,104 @@ QStringList Library::feedUrls() const
     while (q.next())
         urls.append(q.value(0).toString());
     return urls;
+}
+
+QList<qint64> Library::queueIds() const
+{
+    QList<qint64> ids;
+    QSqlQuery q(dbOf(m_connection));
+    q.exec(QStringLiteral(
+        "SELECT q.episode_id FROM queue q JOIN episodes e ON e.id = q.episode_id"
+        " ORDER BY q.position"));
+    while (q.next())
+        ids.append(q.value(0).toLongLong());
+    return ids;
+}
+
+QList<EpisodeRow> Library::queue() const
+{
+    QList<EpisodeRow> rows;
+    for (qint64 id : queueIds()) {
+        EpisodeRow row = episode(id);
+        if (row.id == 0)
+            continue;
+        row.showTitle = showTitle(row.showId);
+        if (row.imagePath.isEmpty() || !QFileInfo::exists(row.imagePath))
+            row.imagePath = showImage(row.showId);
+        rows.append(row);
+    }
+    return rows;
+}
+
+bool Library::isQueued(qint64 episodeId) const
+{
+    QSqlQuery q(dbOf(m_connection));
+    q.prepare(QStringLiteral("SELECT 1 FROM queue WHERE episode_id = ?"));
+    q.addBindValue(episodeId);
+    return q.exec() && q.next();
+}
+
+qint64 Library::queueHead() const
+{
+    const QList<qint64> ids = queueIds();
+    return ids.isEmpty() ? 0 : ids.first();
+}
+
+qint64 Library::queueAfter(qint64 current) const
+{
+    const QList<qint64> ids = queueIds();
+    const int at = ids.indexOf(current);
+    if (at < 0)
+        return ids.isEmpty() ? 0 : ids.first();
+    return at + 1 < ids.size() ? ids.at(at + 1) : 0;
+}
+
+qint64 Library::finishQueued(qint64 finished)
+{
+    const qint64 next = queueAfter(finished);
+    removeFromQueue(finished);
+    return next;
+}
+
+void Library::addToQueue(qint64 episodeId, bool atTop)
+{
+    if (episodeId == 0 || episode(episodeId).id == 0)
+        return;
+    QList<qint64> ids = queueIds();
+    ids.removeAll(episodeId);
+    if (atTop)
+        ids.prepend(episodeId);
+    else
+        ids.append(episodeId);
+    setQueueOrder(ids);
+}
+
+bool Library::removeFromQueue(qint64 episodeId)
+{
+    QSqlQuery q(dbOf(m_connection));
+    q.prepare(QStringLiteral("DELETE FROM queue WHERE episode_id = ?"));
+    q.addBindValue(episodeId);
+    return q.exec() && q.numRowsAffected() > 0;
+}
+
+void Library::setQueueOrder(const QList<qint64> &ids)
+{
+    auto db = dbOf(m_connection);
+    db.transaction();
+    QSqlQuery q(db);
+    q.exec(QStringLiteral("DELETE FROM queue"));
+    q.prepare(QStringLiteral("INSERT OR IGNORE INTO queue (episode_id, position) VALUES (?, ?)"));
+    int pos = 0;
+    for (qint64 id : ids) {
+        q.addBindValue(id);
+        q.addBindValue(pos++);
+        q.exec();
+    }
+    db.commit();
+}
+
+void Library::clearQueue()
+{
+    QSqlQuery q(dbOf(m_connection));
+    q.exec(QStringLiteral("DELETE FROM queue"));
 }

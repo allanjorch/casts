@@ -41,6 +41,7 @@ public:
         PositionRole,
         AudioRole,
         CoverRole,
+        ShowTitleRole,
     };
 
     explicit EpisodeModel(QObject *parent = nullptr);
@@ -52,6 +53,9 @@ public:
     void setRows(const QList<EpisodeRow> &rows);
     // Swap one row to a cached file without resetting the list.
     void setImagePath(qint64 episodeId, const QString &imagePath);
+    // Move one row without a reset (live drag reordering in the queue).
+    bool moveRow(int from, int to);
+    QList<qint64> ids() const;
 
 private:
     QList<EpisodeRow> m_rows;

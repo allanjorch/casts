@@ -5,9 +5,11 @@ Item {
     id: page
     signal markAllRequested()
     signal removeRequested()
+    signal queueRequested()
 
     property var markedEpisode: 0
     property bool markedPlayed: false
+    property bool markedQueued: false
     // Which show this page is holding. Main keeps one page per visited show.
     property double showId: 0
     property var episodeModel: null
@@ -81,6 +83,7 @@ Item {
     function openMarkMenu(episodeId, played) {
         markedEpisode = episodeId
         markedPlayed = played
+        markedQueued = backend.isQueued(episodeId)
         markMenu.popup()
     }
 
@@ -127,9 +130,10 @@ Item {
                 }
                 onClicked: backend.refreshOpenShow(reloadArtwork)
             }
-            Item {
-                width: 16
-                height: 1
+            IconButton {
+                icon.source: "qrc:/icons/queue-symbolic.svg"
+                tip: backend.queueCount > 0 ? "Queue (" + backend.queueCount + ")" : "Queue"
+                onClicked: page.queueRequested()
             }
             IconButton {
                 icon.name: "check-plain-symbolic"
@@ -358,6 +362,16 @@ Item {
             text: "Mark as unplayed"
             enabled: page.markedPlayed
             onTriggered: backend.markPlayed(page.markedEpisode, false)
+        }
+        AppMenuSeparator {}
+        AppMenuItem {
+            text: "Play next"
+            onTriggered: backend.playNext(page.markedEpisode)
+        }
+        AppMenuItem {
+            text: page.markedQueued ? "Remove from queue" : "Add to queue"
+            onTriggered: page.markedQueued ? backend.removeFromQueue(page.markedEpisode)
+                                           : backend.addToQueue(page.markedEpisode)
         }
         AppMenuSeparator {}
         AppMenuItem {

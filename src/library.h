@@ -28,6 +28,7 @@ struct EpisodeRow {
     int durationSecs = 0;
     bool played = false;
     int positionMs = 0;
+    QString showTitle; // filled by queue() only
 };
 
 struct ParsedEpisode {
@@ -104,6 +105,22 @@ public:
     void setEpisodeShowAll(bool showAll);
 
     QStringList feedUrls() const;
+
+    // Up-next queue (table `queue`, ordered by position).
+    QList<EpisodeRow> queue() const;
+    QList<qint64> queueIds() const;
+    bool isQueued(qint64 episodeId) const;
+    qint64 queueHead() const;
+    // What plays after `current`: the queue item after it when it is queued
+    // (0 if it is last), otherwise the top of the queue.
+    qint64 queueAfter(qint64 current) const;
+    // End of episode: pick what follows `finished` by position, then drop it.
+    // The only automatic removal; starting or manually marking leaves the queue alone.
+    qint64 finishQueued(qint64 finished);
+    void addToQueue(qint64 episodeId, bool atTop);
+    bool removeFromQueue(qint64 episodeId);
+    void setQueueOrder(const QList<qint64> &ids);
+    void clearQueue();
 
 private:
     bool migrate();

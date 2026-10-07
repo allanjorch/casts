@@ -6,6 +6,7 @@ Item {
     signal addRequested()
     signal importRequested()
     signal markLibraryRequested()
+    signal queueRequested()
 
     readonly property int columnFloor: 112
     readonly property real galleryGap: 12
@@ -155,10 +156,11 @@ Item {
                     }
                 }
             }
-            Item {
+            IconButton {
                 visible: actions.hasShows
-                width: 16
-                height: 1
+                icon.source: "qrc:/icons/queue-symbolic.svg"
+                tip: backend.queueCount > 0 ? "Queue (" + backend.queueCount + ")" : "Queue"
+                onClicked: shelf.queueRequested()
             }
             IconButton {
                 visible: actions.hasShows

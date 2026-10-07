@@ -181,7 +181,7 @@ public:
     double rate() const { return m_rate; }
     double volume() const { return m_volume; }
     qint64 positionMs() const { return m_positionMs; }
-    bool canGoNext() const { return m_library.adjacent(m_episode.id, true, false) != 0; }
+    bool canGoNext() const { return m_library.queueAfter(m_episode.id) != 0 || m_library.adjacent(m_episode.id, true, false) != 0; }
     bool canGoPrevious() const { return m_library.adjacent(m_episode.id, false, false) != 0; }
     QVariantMap metadata() const;
     void setMpris(MprisPlayerAdaptor *mpris) { m_mpris = mpris; }
@@ -353,7 +353,10 @@ void PlayerService::skip(bool older)
 {
     if (m_episode.id == 0)
         return;
-    const qint64 id = m_library.adjacent(m_episode.id, older, false);
+    // Next prefers the up-next queue; Previous stays chronological.
+    qint64 id = older ? m_library.queueAfter(m_episode.id) : 0;
+    if (id == 0)
+        id = m_library.adjacent(m_episode.id, older, false);
     if (id != 0)
         Load(id);
 }
@@ -541,7 +544,11 @@ PlayerService::PlayerService(Library &library, QObject *parent)
         m_library.markPlayed(m_episode.id, true);
         m_library.setPosition(m_episode.id, static_cast<int>(m_durationMs));
         m_episode.played = true;
-        const qint64 next = m_library.adjacent(m_episode.id, true, true);
+        // Up-next queue wins; otherwise the next older unplayed episode of this show.
+        // Pick the follower by position first, then drop the finished one.
+        qint64 next = m_library.finishQueued(m_episode.id);
+        if (next == 0)
+            next = m_library.adjacent(m_episode.id, true, true);
         const int gen = m_mediaGeneration;
         QTimer::singleShot(0, this, [this, next, gen]() {
             if (m_mediaGeneration != gen)
@@ -1466,7 +1473,9 @@ void PlayerService::maybePrefetchNext()
 {
     if (m_episode.id == 0)
         return;
-    const qint64 nextId = m_library.adjacent(m_episode.id, true, true);
+    qint64 nextId = m_library.queueAfter(m_episode.id);
+    if (nextId == 0)
+        nextId = m_library.adjacent(m_episode.id, true, true);
     if (nextId == 0)
         return;
     if (m_prefetch) {

@@ -7,6 +7,7 @@
         <file alias="EpisodeView.qml">qml/EpisodeView.qml</file>
         <file alias="PlayerBar.qml">qml/PlayerBar.qml</file>
         <file alias="Scrubber.qml">qml/Scrubber.qml</file>
+        <file alias="QueueView.qml">qml/QueueView.qml</file>
         <file alias="NowPlaying.qml">qml/NowPlaying.qml</file>
         <file alias="IconButton.qml">qml/IconButton.qml</file>
         <file alias="StatusNote.qml">qml/StatusNote.qml</file>
@@ -17,5 +18,9 @@
         <file alias="AppTip.qml">qml/AppTip.qml</file>
         <file alias="FastWheel.qml">qml/FastWheel.qml</file>
         <file alias="QuietScroll.qml">qml/QuietScroll.qml</file>
+        <file alias="icons/queue-symbolic.svg">qml/icons/queue-symbolic.svg</file>
+        <file alias="icons/queue-add-symbolic.svg">qml/icons/queue-add-symbolic.svg</file>
+        <file alias="icons/queue-remove-symbolic.svg">qml/icons/queue-remove-symbolic.svg</file>
+        <file alias="icons/queue-clear-symbolic.svg">qml/icons/queue-clear-symbolic.svg</file>
     </qresource>
 </RCC>

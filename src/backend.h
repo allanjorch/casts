@@ -58,6 +58,8 @@ class Backend : public QObject {
     // Library size, not the eye-filtered shelf. Header chrome uses this so a
     // caught-up filter cannot hide the eye that would bring shows back.
     Q_PROPERTY(int showCount READ showCount NOTIFY showCountChanged)
+    Q_PROPERTY(EpisodeModel *queueModel READ queueModel CONSTANT)
+    Q_PROPERTY(int queueCount READ queueCount NOTIFY queueChanged)
 
 public:
     explicit Backend(Library &library, QObject *parent = nullptr);
@@ -100,6 +102,8 @@ public:
     bool shelfShowAll() const;
     bool episodeShowAll() const;
     int showCount() const { return m_showCount; }
+    EpisodeModel *queueModel() { return &m_queueModel; }
+    int queueCount() const { return m_queueModel.rowCount(); }
 
     // Local calendar day for published timestamps (unix seconds).
     Q_INVOKABLE QString formatDay(qint64 unixSecs) const;
@@ -138,6 +142,21 @@ public:
     Q_INVOKABLE void markOlderPlayed(qint64 episodeId);
     Q_INVOKABLE void markNewerPlayed(qint64 episodeId);
 
+    // Up-next queue
+    Q_INVOKABLE void addToQueue(qint64 episodeId);
+    Q_INVOKABLE void playNext(qint64 episodeId);
+    Q_INVOKABLE void removeFromQueue(qint64 episodeId);
+    // Live move (drag): reorders the model and persists. Rows are model indexes.
+    Q_INVOKABLE void moveInQueue(int from, int to);
+    Q_INVOKABLE void clearQueue();
+    Q_INVOKABLE bool isQueued(qint64 episodeId) const;
+    Q_INVOKABLE void playFromQueue(qint64 episodeId);
+    Q_INVOKABLE void skipToNextQueued();
+    // Item after the playing one if it is queued, else the queue top; 0 if none.
+    Q_INVOKABLE qint64 nextQueuedId() const;
+    // Episode details opened from the Queue page; Back returns to where we were.
+    Q_INVOKABLE void openEpisodeFromQueue(qint64 episodeId);
+
     Q_INVOKABLE QVariantMap windowGeometry() const;
     Q_INVOKABLE void saveWindowGeometry(int x, int y, int width, int height, bool maximized);
     void raiseWindow();
@@ -153,6 +172,7 @@ signals:
     void shelfLayoutChanged();
     void filterChanged();
     void showCountChanged();
+    void queueChanged();
     void episodeModelDiscarded(qint64 showId);
     void raised();
 
@@ -205,6 +225,7 @@ private:
     void applyPlayerState(const QVariantMap &state);
     void callPlayer(const QString &method, const QVariantList &args = {});
     void restoreLastPlayed();
+    void reloadQueue();
     QString countMessage(int count, const QString &what) const;
 
     struct PendingPlayerCall {
@@ -216,6 +237,7 @@ private:
     int m_showCount = 0;
     ShowModel m_shows;
     EpisodeModel m_episodes;
+    EpisodeModel m_queueModel;
     QHash<qint64, EpisodeModel *> m_episodeModels;
     QNetworkAccessManager m_network;
     QList<Job> m_queue;
