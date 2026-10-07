@@ -12,7 +12,7 @@ Work **one item at a time**. Do not start the next until the current one is done
 6. [x] **Artwork force-reload** — Ctrl+Left-click on the refresh button forces artwork reload (per earlier decision).
 7. [ ] **Later discussion (do not implement yet)** — Full keyboard-friendly app aligned with Omarchy principles. Discuss approach first; no coding until agreed.
 8. [x] **Eye-toggle filter** — Independent Main vs Episodes; open = show all, closed = unplayed only; persist preferred setting.
-9. [ ] **Later discussion (do not implement yet)** — Central play/pause/seek services vs current Backend/D-Bus player. Decision: shared QML scrubber component, not a second service. The detached player over D-Bus stays the single play/pause/seek service.
+9. [x] **Later discussion (do not implement yet)** — Central play/pause/seek services vs current Backend/D-Bus player. Decision: shared QML scrubber component, not a second service. The detached player over D-Bus stays the single play/pause/seek service.
 
 10. [x] **Header action order** — Empty shelf: Add feed and Import OPML only. Once shows exist: Eye, gallery/list, Refresh, gap, Mark all played, Add, Import. Show page: Eye, Refresh, gap, Mark this show played, Remove.
 
@@ -24,3 +24,6 @@ Work **one item at a time**. Do not start the next until the current one is done
 14. [x] **Faster mouse-wheel scroll** — About 2× wheel speed (FastWheel).
 15. [x] **Quiet scrollbar** — Minimal dynamic scrollbar (QuietScroll) on shelf and episode lists that tracks loaded content.
 16. [ ] **Scroll look and feel** — Revisit how scrolling looks to a person: motion, distance, and the thin scrollbar, not just that the wheel moves.
+17. [ ] **Add-feed URL dialog** — The add-by-URL dialog looks weird; restyle it to match the app's design language.
+18. [ ] **Search** — Search for podcasts and/or episodes.
+19. [ ] **Queue** — Add episodes to a queue, play from it, reorder, and remove.
