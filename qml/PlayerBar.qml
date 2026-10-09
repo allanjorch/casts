@@ -180,7 +180,8 @@ Rectangle {
                             else
                                 bar.considerCloseVolume()
                         }
-                        onClicked: bar.openVolumePopup()
+                        // Click toggles mute; hover still opens the slider.
+                        onClicked: backend.toggleMute()
                     }
                     IconButton {
                         id: speedButton
@@ -335,7 +336,7 @@ Rectangle {
                     orientation: Qt.Vertical
                     // enabled: !backend.busy
                     enabled: true
-                    onMoved: backend.setVolume(value)
+                    onMoved: backend.setVolume(value) // unmutes to this value
                     HoverHandler {
                         cursorShape: Qt.PointingHandCursor
                     }

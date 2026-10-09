@@ -590,6 +590,18 @@ void Library::setVolume(double volume)
     setSetting(QStringLiteral("volume"), QString::number(clamped, 'f', 3));
 }
 
+double Library::volumeBeforeMute() const
+{
+    bool ok = false;
+    const double value = setting(QStringLiteral("volume_before_mute"), QStringLiteral("0")).toDouble(&ok);
+    return ok ? qBound(0.0, value, 1.0) : 0.0;
+}
+
+void Library::setVolumeBeforeMute(double volume)
+{
+    setSetting(QStringLiteral("volume_before_mute"), QString::number(qBound(0.0, volume, 1.0), 'f', 3));
+}
+
 qint64 Library::lastPlayedEpisodeId() const
 {
     bool ok = false;

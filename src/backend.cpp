@@ -1028,6 +1028,17 @@ void Backend::setVolume(double volume)
         callPlayer(QStringLiteral("SetVolume"), {clamped});
 }
 
+void Backend::toggleMute()
+{
+    if (m_playerVolume > 0.0005) {
+        m_library.setVolumeBeforeMute(m_playerVolume);
+        setVolume(0);
+        return;
+    }
+    const double restore = m_library.volumeBeforeMute();
+    setVolume(restore > 0.0005 ? restore : 1.0);
+}
+
 void Backend::setRate(double rate)
 {
     const double clamped = qBound(0.5, rate, 3.0);

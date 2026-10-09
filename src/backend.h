@@ -141,6 +141,8 @@ public:
     Q_INVOKABLE void cycleRate();
     Q_INVOKABLE void setRate(double rate);
     Q_INVOKABLE void setVolume(double volume);
+    // Volume icon click: mute, or restore the level from before muting (persisted).
+    Q_INVOKABLE void toggleMute();
     Q_INVOKABLE void setShelfView(const QString &view);
     Q_INVOKABLE void setShelfColumns(int columns);
     Q_INVOKABLE void setShelfListSize(int size);
