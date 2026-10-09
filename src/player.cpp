@@ -1717,6 +1717,14 @@ int runPlayer(int argc, char **argv)
         library.setAudioCacheUa(QStringLiteral("generic-v1"));
         qInfo("[podcast-cache] audio identity changed: removed %d cached episode files", removed);
     }
+    // One-time: Audioboom audio cached before the static-fallback fix has
+    // stitched-in ads. A new player process plays nothing yet, so it is safe.
+    if (!library.cacheMigrationDone(QStringLiteral("audio_cache_static_fallback"))) {
+        const QList<qint64> ids = library.episodeIdsViaHost(QStringLiteral("audioboom.com"));
+        const int removed = HttpFileBuffer::purgeEpisodes(ids);
+        library.markCacheMigrationDone(QStringLiteral("audio_cache_static_fallback"));
+        qInfo("[podcast-cache] static-fallback fix: removed %d cached Audioboom episode files", removed);
+    }
     QTimer::singleShot(400, &service, &PlayerService::considerExit);
     return app.exec();
 }

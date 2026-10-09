@@ -117,6 +117,11 @@ public:
     void setNowPlayingArtScale(double scale);
     void setEpisodeShowAll(bool showAll);
     // Which audio User-Agent generation the media cache was downloaded with.
+    // Episodes whose show feed or audio URL goes through this host fragment.
+    QList<qint64> episodeIdsViaHost(const QString &host) const;
+    // One-time migration flags (player start).
+    bool cacheMigrationDone(const QString &key) const { return setting(key, QString()) == QStringLiteral("1"); }
+    void markCacheMigrationDone(const QString &key) { setSetting(key, QStringLiteral("1")); }
     QString audioCacheUa() const;
     void setAudioCacheUa(const QString &generation);
 

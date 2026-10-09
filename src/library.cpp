@@ -531,6 +531,22 @@ qint64 Library::adjacent(qint64 episodeId, bool older, bool unplayedOnly) const
     return q.next() ? q.value(0).toLongLong() : 0;
 }
 
+QList<qint64> Library::episodeIdsViaHost(const QString &host) const
+{
+    QList<qint64> ids;
+    QSqlQuery q(dbOf(m_connection));
+    q.prepare(QStringLiteral(
+        "SELECT e.id FROM episodes e JOIN shows s ON s.id = e.show_id"
+        " WHERE s.feed_url LIKE ? OR e.audio_url LIKE ?"));
+    const QString like = QLatin1Char('%') + host + QLatin1Char('%');
+    q.addBindValue(like);
+    q.addBindValue(like);
+    if (q.exec())
+        while (q.next())
+            ids.append(q.value(0).toLongLong());
+    return ids;
+}
+
 QString Library::audioCacheUa() const
 {
     return setting(QStringLiteral("audio_cache_ua"), QString());

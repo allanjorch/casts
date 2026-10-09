@@ -49,6 +49,11 @@ public:
     // Audio User-Agent to try first for this URL's host this session: the generic
     // player identity, or the app's own if that host refused the generic one.
     static QByteArray preferredUserAgent(const QUrl &url);
+    // Static original behind a dynamic-ad variant URL (…/v1/variant/…?fallback_url=…
+    // media_type=static, e.g. Audioboom). Empty when the URL is not such a variant.
+    static QUrl staticFallbackUrl(const QUrl &url);
+    // Deletes cached files (finished, .part, sidecar) of these episodes.
+    static int purgeEpisodes(const QList<qint64> &episodeIds);
 
 signals:
     void progressed(qint64 availableBytes);
@@ -58,7 +63,9 @@ signals:
 private:
     friend class GrowingMediaDevice;
 
-    void startRequest(qint64 fromOffset);
+    // overrideUrl: fetch this instead of m_url (the static fallback of a stitched variant).
+    void startRequest(qint64 fromOffset, const QUrl &overrideUrl = QUrl());
+    void onRedirected(const QUrl &target);
     void onReadyRead();
     void onReplyFinished();
     void scheduleRetry();
@@ -110,6 +117,10 @@ private:
     bool m_fallbackInFlight = false;
     bool m_genericRefusedByHost = false;
     bool m_truncateOnAccept = false; // next accepted response restarts the file at 0
+    // Which variant the bytes are: "default" (whatever the chain serves) or
+    // "static" (fallback_url original). Part of the sidecar identity.
+    QByteArray m_variant = "default";
+    QByteArray m_sidecarVariant;
 };
 
 class GrowingMediaDevice : public QIODevice {

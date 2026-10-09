@@ -10,6 +10,7 @@
 #include <QNetworkRequest>
 #include <QSet>
 #include <QStandardPaths>
+#include <QUrlQuery>
 #include <QTimer>
 
 namespace {
@@ -108,12 +109,47 @@ QString HttpFileBuffer::uaSidecarPath() const
 
 void HttpFileBuffer::writeUaSidecar()
 {
+    // Line 1: UA. Line 2: variant=<default|static>. Both must match to resume.
     QFile side(uaSidecarPath());
     if (side.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        side.write(m_ua);
+        side.write(m_ua + "\nvariant=" + m_variant + "\n");
         side.close();
     }
     m_sidecarUa = m_ua;
+    m_sidecarVariant = m_variant;
+}
+
+QUrl HttpFileBuffer::staticFallbackUrl(const QUrl &url)
+{
+    if (!url.path().contains(QStringLiteral("/variant/")))
+        return {};
+    const QUrlQuery query(url);
+    if (!query.hasQueryItem(QStringLiteral("fallback_url")))
+        return {};
+    const QUrl fallback(query.queryItemValue(QStringLiteral("fallback_url"), QUrl::FullyDecoded),
+                        QUrl::StrictMode);
+    if (!fallback.isValid() || fallback.scheme() != QStringLiteral("https"))
+        return {};
+    if (QUrlQuery(fallback).queryItemValue(QStringLiteral("media_type")) != QStringLiteral("static"))
+        return {};
+    return fallback;
+}
+
+int HttpFileBuffer::purgeEpisodes(const QList<qint64> &episodeIds)
+{
+    QDir dir(mediaDir());
+    int removed = 0;
+    for (qint64 id : episodeIds) {
+        const QString stem = QString::number(id);
+        const QFileInfoList files = dir.entryInfoList({stem, stem + QStringLiteral(".*"),
+                                                       QStringLiteral(".") + stem + QStringLiteral(".ua")},
+                                                      QDir::Files | QDir::Hidden);
+        for (const QFileInfo &fi : files) {
+            if (QFile::remove(fi.absoluteFilePath()) && !fi.fileName().startsWith(QLatin1Char('.')))
+                ++removed;
+        }
+    }
+    return removed;
 }
 
 QString HttpFileBuffer::finishedPathForExt(const QString &ext) const
@@ -221,10 +257,22 @@ void HttpFileBuffer::start()
         // Resume only bytes fetched with this same UA; another UA can mean another
         // ad variant, and splicing two variants corrupts the episode.
         QByteArray recorded;
+        QByteArray recordedVariant;
         QFile side(uaSidecarPath());
-        if (side.open(QIODevice::ReadOnly))
-            recorded = side.readAll().trimmed();
-        if (recorded != m_ua) {
+        if (side.open(QIODevice::ReadOnly)) {
+            const QList<QByteArray> lines = side.readAll().split('\n');
+            recorded = lines.value(0).trimmed();
+            const QByteArray v = lines.value(1).trimmed();
+            if (v.startsWith("variant="))
+                recordedVariant = v.mid(8);
+        }
+        if (recordedVariant.isEmpty()) {
+            // No variant marker (older build): could be stitched bytes. Start over.
+            qInfo("[podcast-cache] episode %lld: .part has no variant marker, restarting from 0",
+                  static_cast<long long>(m_episodeId));
+            QFile::remove(part);
+            existing = 0;
+        } else if (recorded != m_ua) {
             qInfo("[podcast-cache] episode %lld: .part was fetched with %s UA, restarting from 0",
                   static_cast<long long>(m_episodeId),
                   recorded.isEmpty() ? "unknown" : uaLabel(recorded));
@@ -232,6 +280,7 @@ void HttpFileBuffer::start()
             existing = 0;
         } else {
             m_sidecarUa = recorded;
+            m_sidecarVariant = recordedVariant;
         }
     }
     if (existing == 0)
@@ -264,7 +313,7 @@ void HttpFileBuffer::start()
     startRequest(existing);
 }
 
-void HttpFileBuffer::startRequest(qint64 fromOffset)
+void HttpFileBuffer::startRequest(qint64 fromOffset, const QUrl &overrideUrl)
 {
     if (m_aborted || m_failed)
         return;
@@ -285,9 +334,13 @@ void HttpFileBuffer::startRequest(qint64 fromOffset)
     m_reqRejected = false;
     m_reqAccepted = false;
 
-    QNetworkRequest req(m_url);
+    // Every fresh chain starts as "default"; onRedirected switches to the static
+    // fallback before any stitched body flows.
+    m_variant = overrideUrl.isEmpty() ? QByteArray("default") : QByteArray("static");
+    QNetworkRequest req(overrideUrl.isEmpty() ? m_url : overrideUrl);
+    // Each hop is checked in onRedirected (same safety as NoLessSafe).
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                     QNetworkRequest::NoLessSafeRedirectPolicy);
+                     QNetworkRequest::UserVerifiedRedirectPolicy);
     req.setRawHeader("User-Agent", m_ua);
     // Prefer identity so .part bytes match the final file without on-the-fly decode surprises.
     req.setRawHeader("Accept-Encoding", "identity");
@@ -301,6 +354,38 @@ void HttpFileBuffer::startRequest(qint64 fromOffset)
     m_reply = m_nam->get(req);
     connect(m_reply, &QNetworkReply::readyRead, this, &HttpFileBuffer::onReadyRead);
     connect(m_reply, &QNetworkReply::finished, this, &HttpFileBuffer::onReplyFinished);
+    connect(m_reply, &QNetworkReply::redirected, this, &HttpFileBuffer::onRedirected);
+}
+
+void HttpFileBuffer::onRedirected(const QUrl &target)
+{
+    QNetworkReply *reply = m_reply;
+    if (!reply || sender() != reply)
+        return;
+    const QUrl fallback = staticFallbackUrl(target);
+    if (!fallback.isEmpty() && m_variant != "static") {
+        // Dynamic-ad variant: never request it; fetch the static original instead.
+        qInfo("[podcast-cache] episode %lld: %s serves a stitched variant; using its static "
+              "fallback %s",
+              static_cast<long long>(m_episodeId), qPrintable(target.host()),
+              qPrintable(fallback.host() + fallback.path()));
+        qint64 from = 0;
+        {
+            QMutexLocker lock(&m_mutex);
+            from = m_available;
+        }
+        // Bytes on disk from another variant: start the file over.
+        if (from > 0 && m_sidecarVariant != "static")
+            m_truncateOnAccept = true;
+        startRequest(from, fallback);
+        return;
+    }
+    // NoLessSafeRedirectPolicy equivalent: never https -> http.
+    if (reply->url().scheme() == QStringLiteral("https") && target.scheme() != QStringLiteral("https")) {
+        reply->abort();
+        return;
+    }
+    emit reply->redirectAllowed();
 }
 
 void HttpFileBuffer::onReadyRead()
@@ -308,7 +393,10 @@ void HttpFileBuffer::onReadyRead()
     if (!m_reply || !m_writer || m_aborted)
         return;
 
-    evaluateHeaders(m_reply);
+    QNetworkReply *const reply = m_reply;
+    evaluateHeaders(reply);
+    if (m_reply != reply)
+        return; // restarted (variant changed)
     if (!m_reqAccepted) {
         // Error page or non-audio body: never let it into the .part. The
         // finished handler decides between UA fallback and a retry.
@@ -359,10 +447,21 @@ void HttpFileBuffer::evaluateHeaders(QNetworkReply *reply)
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     // Anything but a 206 continuation starts the file over: a 200 to a Range
     // request, or the first accepted reply after a UA switch.
+    // Resumed (206) onto bytes from the other variant: refetch everything.
+    if (status == 206 && m_writer->size() > 0 && !m_sidecarVariant.isEmpty()
+        && m_sidecarVariant != m_variant) {
+        qWarning("[podcast-cache] episode %lld: variant changed (%s -> %s), refetching from 0",
+                 static_cast<long long>(m_episodeId), m_sidecarVariant.constData(),
+                 m_variant.constData());
+        m_truncateOnAccept = true;
+        const QUrl again = m_variant == "static" ? reply->url() : QUrl();
+        startRequest(0, again); // replaces m_reply; onReadyRead notices and stops
+        return;
+    }
     if (m_truncateOnAccept || (status != 206 && m_writer->size() > 0)) {
         qWarning("[podcast-cache] episode %lld: rewriting .part from 0 (%s)",
                  static_cast<long long>(m_episodeId),
-                 m_truncateOnAccept ? "new UA" : "server ignored Range");
+                 m_truncateOnAccept ? "other UA or variant" : "server ignored Range");
         m_writer->resize(0);
         m_writer->seek(0);
         QMutexLocker lock(&m_mutex);
@@ -371,7 +470,7 @@ void HttpFileBuffer::evaluateHeaders(QNetworkReply *reply)
         wakeReaders();
     }
     m_truncateOnAccept = false;
-    if (m_sidecarUa != m_ua)
+    if (m_sidecarUa != m_ua || m_sidecarVariant != m_variant)
         writeUaSidecar();
     if (m_fallbackInFlight) {
         m_fallbackInFlight = false;
