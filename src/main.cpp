@@ -1,4 +1,5 @@
 #include "backend.h"
+#include <cstdio>
 #include "covercache.h"
 #include "explore.h"
 #include "netaccess.h"
@@ -16,6 +17,7 @@
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QTimer>
 #include <QVariant>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -116,6 +118,7 @@ int runSelfTest(int argc, char **argv);
 
 int main(int argc, char **argv)
 {
+    startupTimer().start();
     QStringList args;
     for (int i = 1; i < argc; ++i)
         args << QString::fromLocal8Bit(argv[i]);
@@ -147,6 +150,14 @@ int main(int argc, char **argv)
     Library library;
     if (!library.isOpen())
         return 1;
+    {
+        // Shelf covers into memory while QML loads, so they paint with the first frame.
+        QStringList paths;
+        for (const ShowRow &row : library.shows())
+            if (!row.imagePath.isEmpty())
+                paths << row.imagePath;
+        prewarmCovers(paths, {kCoverTileSide, kCoverRowSide});
+    }
 
     Theme theme;
     Backend backend(library);
@@ -157,15 +168,41 @@ int main(int argc, char **argv)
     bus.registerService(uiService);
 
 
+    CoverCache coverCache;
     QQmlApplicationEngine engine;
     engine.setNetworkAccessManagerFactory(new AppNetworkAccessManagerFactory);
     engine.addImageProvider(QStringLiteral("covers"), new CoverImageProvider);
     engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
     engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
+    engine.rootContext()->setContextProperty(QStringLiteral("coverCache"), &coverCache);
     engine.rootContext()->setContextProperty(QStringLiteral("explore"), &explore);
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty())
         return 1;
+    if (startupTiming()) {
+        fprintf(stderr, "timing: qml loaded %lld ms\n", qint64(startupTimer().elapsed()));
+        if (auto *win = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst())) {
+            auto *conn = new QMetaObject::Connection;
+            *conn = QObject::connect(win, &QQuickWindow::frameSwapped, win, [conn]() {
+                fprintf(stderr, "timing: first frame %lld ms\n", qint64(startupTimer().elapsed()));
+                QObject::disconnect(*conn);
+                delete conn;
+            });
+        }
+        // Harness: grow the window (bigger tiles) to check resizes never reload covers.
+        if (qEnvironmentVariableIntValue("PODCAST_TIMING_RESIZE") == 1) {
+            if (auto *win = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst())) {
+                QTimer::singleShot(1500, win, [win]() {
+                    fprintf(stderr, "timing: resize %lld ms\n", qint64(startupTimer().elapsed()));
+                    win->resize(2560, 1440);
+                    QTimer::singleShot(500, win, [win]() { fprintf(stderr, "timing: window now %dx%d\n", win->width(), win->height()); });
+                });
+            }
+        }
+        const int quitMs = qEnvironmentVariableIntValue("PODCAST_TIMING_QUIT_MS");
+        if (quitMs > 0)
+            QTimer::singleShot(quitMs, &app, &QCoreApplication::quit);
+    }
     WindowInputFilter inputFilter;
     inputFilter.window = engine.rootObjects().constFirst();
     app.installEventFilter(&inputFilter);

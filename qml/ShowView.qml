@@ -234,8 +234,11 @@ Item {
                     // top-to-bottom cascade even when the file is already on disk.
                     asynchronous: false
                     cache: true
-                    sourceSize.width: page.listCover * 2
-                    sourceSize.height: page.listCover * 2
+                    // Fixed decode size so resizing never reloads.
+                    smooth: true
+                    mipmap: true
+                    sourceSize.width: coverCache.rowSide / Screen.devicePixelRatio
+                    sourceSize.height: coverCache.rowSide / Screen.devicePixelRatio
                     visible: playWell.art !== ""
                     z: 0
                 }

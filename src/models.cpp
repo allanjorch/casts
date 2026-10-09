@@ -6,13 +6,6 @@
 #include <QUrl>
 
 namespace {
-QString coverUrl(const QString &path)
-{
-    if (path.isEmpty() || !QFileInfo::exists(path))
-        return {};
-    return QUrl::fromLocalFile(path).toString();
-}
-
 bool sameEpisode(const EpisodeRow &a, const EpisodeRow &b)
 {
     return a.id == b.id
@@ -52,7 +45,8 @@ QVariant ShowModel::data(const QModelIndex &index, int role) const
     case AuthorRole:
         return row.author;
     case CoverRole:
-        return coverUrl(row.imagePath);
+        // Provider: on-disk display-size thumbs + memory cache (see covercache.h).
+        return localCoverSource(row.imagePath);
     case UnheardRole:
         return row.unheard;
     default:

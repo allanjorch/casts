@@ -252,9 +252,14 @@ Item {
                         anchors.fill: parent
                         source: model.cover
                         fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                        sourceSize.width: Math.max(168, cover.width * 2)
-                        sourceSize.height: Math.max(168, cover.height * 2)
+                        // Fixed decode size: resizing the window never reloads; the GPU scales.
+                        // Sync only when prewarmed in memory (paints with the first frame).
+                        asynchronous: !coverCache.ready(model.cover, coverCache.tileSide)
+                        cache: true
+                        smooth: true
+                        mipmap: true
+                        sourceSize.width: coverCache.tileSide / Screen.devicePixelRatio
+                        sourceSize.height: coverCache.tileSide / Screen.devicePixelRatio
                         visible: model.cover !== ""
                     }
                     Rectangle {
@@ -381,9 +386,12 @@ Item {
                     anchors.fill: parent
                     source: model.cover
                     fillMode: Image.PreserveAspectCrop
-                    asynchronous: true
-                    sourceSize.width: shelf.listCover * 2
-                    sourceSize.height: shelf.listCover * 2
+                    asynchronous: !coverCache.ready(model.cover, coverCache.rowSide)
+                    cache: true
+                    smooth: true
+                    mipmap: true
+                    sourceSize.width: coverCache.rowSide / Screen.devicePixelRatio
+                    sourceSize.height: coverCache.rowSide / Screen.devicePixelRatio
                     visible: model.cover !== ""
                 }
                 Rectangle {
