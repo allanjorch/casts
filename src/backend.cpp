@@ -505,7 +505,7 @@ void Backend::fetchNext()
 
     QNetworkRequest request{QUrl(job.url)};
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("omaear/0.1 (Omarchy; +https://github.com/allanjorch)"));
+                      QStringLiteral("omaear/" OMAEAR_VERSION " (Omarchy; +https://github.com/allanjorch/omaear)"));
     request.setTransferTimeout(20000);
     if (job.plainEncoding)
         request.setRawHeader("Accept-Encoding", "identity");
@@ -576,7 +576,7 @@ void Backend::downloadCover(qint64 showId, const QString &imageUrl)
     m_showCoverDownloads.insert(showId);
     QNetworkRequest request{QUrl(imageUrl)};
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("omaear/0.1 (Omarchy)"));
+                      QStringLiteral("omaear/" OMAEAR_VERSION " (Omarchy)"));
     request.setTransferTimeout(20000);
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, showId, imageUrl, gen, fresh]() {
@@ -747,7 +747,7 @@ void Backend::startEpisodeCoverDownload(qint64 episodeId, const QString &imageUr
     m_episodeCoverDownloads.insert(episodeId);
     QNetworkRequest request{QUrl(imageUrl)};
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("omaear/0.1 (Omarchy)"));
+                      QStringLiteral("omaear/" OMAEAR_VERSION " (Omarchy)"));
     request.setTransferTimeout(20000);
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, episodeId, imageUrl, gen, freshFile]() {
@@ -1658,7 +1658,7 @@ void Backend::fetchArtwork(const ArtSource &src, std::function<void(const QByteA
         return;
     }
     QNetworkRequest request{QUrl(src.url)};
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("omaear/0.1 (Omarchy)"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("omaear/" OMAEAR_VERSION " (Omarchy)"));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     request.setTransferTimeout(30000);
     QNetworkReply *reply = m_network.get(request);

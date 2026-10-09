@@ -7,3 +7,10 @@ moc_*
 omaear
 podcast
 .preview/
+com.github.allanjorch.omaear.desktop
+dist/
+packaging/src/
+packaging/pkg/
+packaging/*.pkg.tar.zst
+packaging/omaear-*/
+packaging/*.tar.gz

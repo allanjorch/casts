@@ -124,6 +124,10 @@ int main(int argc, char **argv)
     QStringList args;
     for (int i = 1; i < argc; ++i)
         args << QString::fromLocal8Bit(argv[i]);
+    if (args.contains(QStringLiteral("--version"))) {
+        printf("omaear %s\n", OMAEAR_VERSION);
+        return 0;
+    }
     if (args.contains(QStringLiteral("--player")))
         return runPlayer(argc, argv);
     if (args.contains(QStringLiteral("--self-test")))

@@ -2,7 +2,7 @@
 Type=Application
 Name=OmaEar
 Comment=A shelf of shows, and playback that keeps going
-Exec=/home/allan/.local/bin/omaear
+Exec=$$DESKTOP_EXEC
 Icon=multimedia-player
 Terminal=false
 Categories=Audio;Player;

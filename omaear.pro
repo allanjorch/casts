@@ -3,6 +3,9 @@ CONFIG += c++17
 CONFIG -= app_bundle
 
 TARGET = omaear
+# Single source of the app version (--version, User-Agent strings, package).
+VERSION = 0.1.0
+DEFINES += OMAEAR_VERSION=\\\"$$VERSION\\\"
 TEMPLATE = app
 
 SOURCES += \
@@ -32,9 +35,22 @@ HEADERS += \
 
 RESOURCES += resources.qrc
 
-# Installed by `make install` into the user prefix, no root required.
-PREFIX = $$getenv(HOME)/.local
+# `make install`: default is the user prefix (~/.local, no root). Packaging:
+#   qmake6 PREFIX=/usr && make && make INSTALL_ROOT="$pkgdir" install
+isEmpty(PREFIX): PREFIX = $$(HOME)/.local
 target.path = $$PREFIX/bin
-desktop.files = com.github.allanjorch.omaear.desktop
+
+# Desktop entry: plain `omaear` for a system install (/usr/bin is on PATH),
+# the absolute path for the user prefix (launchers may not see ~/.local/bin).
+equals(PREFIX, /usr): DESKTOP_EXEC = omaear
+else: DESKTOP_EXEC = $$PREFIX/bin/omaear
+QMAKE_SUBSTITUTES += com.github.allanjorch.omaear.desktop.in
+desktop.files = $$OUT_PWD/com.github.allanjorch.omaear.desktop
+desktop.CONFIG += no_check_exist
 desktop.path = $$PREFIX/share/applications
+
+license.files = LICENSE
+license.path = $$PREFIX/share/licenses/omaear
+
 INSTALLS += target desktop
+equals(PREFIX, /usr): INSTALLS += license

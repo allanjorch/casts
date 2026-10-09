@@ -23,7 +23,7 @@
 #include <algorithm>
 
 namespace {
-const char *kUserAgent = "omaear/0.1 (Omarchy)";
+const char *kUserAgent = "omaear/" OMAEAR_VERSION " (Omarchy)";
 
 qint64 isoSecs(const QString &text)
 {
