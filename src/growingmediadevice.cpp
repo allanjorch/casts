@@ -238,7 +238,7 @@ void HttpFileBuffer::start()
         m_available = QFileInfo(finished).size();
         m_complete = true;
         lock.unlock();
-        qInfo("[podcast-cache] episode %lld already local: %s (%lld bytes)",
+        qInfo("[omaear-cache] episode %lld already local: %s (%lld bytes)",
               static_cast<long long>(m_episodeId), qPrintable(finished),
               static_cast<long long>(QFileInfo(finished).size()));
         emit completed(finished);
@@ -268,12 +268,12 @@ void HttpFileBuffer::start()
         }
         if (recordedVariant.isEmpty()) {
             // No variant marker (older build): could be stitched bytes. Start over.
-            qInfo("[podcast-cache] episode %lld: .part has no variant marker, restarting from 0",
+            qInfo("[omaear-cache] episode %lld: .part has no variant marker, restarting from 0",
                   static_cast<long long>(m_episodeId));
             QFile::remove(part);
             existing = 0;
         } else if (recorded != m_ua) {
-            qInfo("[podcast-cache] episode %lld: .part was fetched with %s UA, restarting from 0",
+            qInfo("[omaear-cache] episode %lld: .part was fetched with %s UA, restarting from 0",
                   static_cast<long long>(m_episodeId),
                   recorded.isEmpty() ? "unknown" : uaLabel(recorded));
             QFile::remove(part);
@@ -296,7 +296,7 @@ void HttpFileBuffer::start()
     if (!m_writer->open(mode)) {
         m_failed = true;
         m_error = QStringLiteral("Cannot open cache file: %1").arg(m_writer->errorString());
-        qWarning("[podcast-cache] %s", qPrintable(m_error));
+        qWarning("[omaear-cache] %s", qPrintable(m_error));
         emit failed(m_error);
         return;
     }
@@ -307,7 +307,7 @@ void HttpFileBuffer::start()
         m_unflushed = 0;
     }
 
-    qInfo("[podcast-cache] download start episode %lld → %s (resume from %lld)",
+    qInfo("[omaear-cache] download start episode %lld → %s (resume from %lld)",
           static_cast<long long>(m_episodeId), qPrintable(part),
           static_cast<long long>(existing));
     startRequest(existing);
@@ -347,7 +347,7 @@ void HttpFileBuffer::startRequest(qint64 fromOffset, const QUrl &overrideUrl)
     if (fromOffset > 0)
         req.setRawHeader("Range",
                          QByteArray("bytes=") + QByteArray::number(fromOffset) + QByteArray("-"));
-    qInfo("[podcast-cache] GET episode %lld ua=%s (%s) from %lld",
+    qInfo("[omaear-cache] GET episode %lld ua=%s (%s) from %lld",
           static_cast<long long>(m_episodeId), uaLabel(m_ua), m_ua.constData(),
           static_cast<long long>(fromOffset));
 
@@ -365,7 +365,7 @@ void HttpFileBuffer::onRedirected(const QUrl &target)
     const QUrl fallback = staticFallbackUrl(target);
     if (!fallback.isEmpty() && m_variant != "static") {
         // Dynamic-ad variant: never request it; fetch the static original instead.
-        qInfo("[podcast-cache] episode %lld: %s serves a stitched variant; using its static "
+        qInfo("[omaear-cache] episode %lld: %s serves a stitched variant; using its static "
               "fallback %s",
               static_cast<long long>(m_episodeId), qPrintable(target.host()),
               qPrintable(fallback.host() + fallback.path()));
@@ -412,7 +412,7 @@ void HttpFileBuffer::onReadyRead()
     if (written != chunk.size()) {
         m_failed = true;
         m_error = QStringLiteral("Cache write failed: %1").arg(m_writer->errorString());
-        qWarning("[podcast-cache] %s", qPrintable(m_error));
+        qWarning("[omaear-cache] %s", qPrintable(m_error));
         m_reply->abort();
         emit failed(m_error);
         return;
@@ -450,7 +450,7 @@ void HttpFileBuffer::evaluateHeaders(QNetworkReply *reply)
     // Resumed (206) onto bytes from the other variant: refetch everything.
     if (status == 206 && m_writer->size() > 0 && !m_sidecarVariant.isEmpty()
         && m_sidecarVariant != m_variant) {
-        qWarning("[podcast-cache] episode %lld: variant changed (%s -> %s), refetching from 0",
+        qWarning("[omaear-cache] episode %lld: variant changed (%s -> %s), refetching from 0",
                  static_cast<long long>(m_episodeId), m_sidecarVariant.constData(),
                  m_variant.constData());
         m_truncateOnAccept = true;
@@ -459,7 +459,7 @@ void HttpFileBuffer::evaluateHeaders(QNetworkReply *reply)
         return;
     }
     if (m_truncateOnAccept || (status != 206 && m_writer->size() > 0)) {
-        qWarning("[podcast-cache] episode %lld: rewriting .part from 0 (%s)",
+        qWarning("[omaear-cache] episode %lld: rewriting .part from 0 (%s)",
                  static_cast<long long>(m_episodeId),
                  m_truncateOnAccept ? "other UA or variant" : "server ignored Range");
         m_writer->resize(0);
@@ -479,7 +479,7 @@ void HttpFileBuffer::evaluateHeaders(QNetworkReply *reply)
             QMutexLocker lock(&g_appUaHostsMutex);
             g_appUaHosts.insert(host);
         }
-        qWarning("[podcast-cache] %s refused the generic player identity; using the app's "
+        qWarning("[omaear-cache] %s refused the generic player identity; using the app's "
                  "own for this session (may include ads)", qPrintable(host));
     }
     m_reqAccepted = true;
@@ -521,7 +521,7 @@ bool HttpFileBuffer::tryUserAgentFallback(bool httpRefusal, const QString &why)
         QMutexLocker lock(&m_mutex);
         m_truncateOnAccept = m_available > 0 || (m_writer && m_writer->size() > 0);
     }
-    qWarning("[podcast-cache] episode %lld: generic player identity failed (%s); retrying now "
+    qWarning("[omaear-cache] episode %lld: generic player identity failed (%s); retrying now "
              "with the app's own", static_cast<long long>(m_episodeId), qPrintable(why));
     startRequest(0);
     return true;
@@ -615,7 +615,7 @@ void HttpFileBuffer::onReplyFinished()
         if (m_reqRejected && err == QNetworkReply::NoError && m_retries >= kMaxRetries) {
             m_failed = true;
             m_error = QStringLiteral("Server did not send audio (%1)").arg(why);
-            qWarning("[podcast-cache] episode %lld failed: %s",
+            qWarning("[omaear-cache] episode %lld failed: %s",
                      static_cast<long long>(m_episodeId), qPrintable(m_error));
             {
                 QMutexLocker lock(&m_mutex);
@@ -647,7 +647,7 @@ void HttpFileBuffer::onReplyFinished()
     m_error = reply->errorString().isEmpty()
         ? QStringLiteral("Download failed (HTTP %1)").arg(status)
         : reply->errorString();
-    qWarning("[podcast-cache] episode %lld failed: %s",
+    qWarning("[omaear-cache] episode %lld failed: %s",
              static_cast<long long>(m_episodeId), qPrintable(m_error));
     {
         QMutexLocker lock(&m_mutex);
@@ -666,7 +666,7 @@ void HttpFileBuffer::scheduleRetry()
         from = m_available;
     }
     const int delay = kRetryBaseMs * m_retries;
-    qInfo("[podcast-cache] retry %d for episode %lld in %d ms (from %lld)",
+    qInfo("[omaear-cache] retry %d for episode %lld in %d ms (from %lld)",
           m_retries, static_cast<long long>(m_episodeId), delay,
           static_cast<long long>(from));
     QTimer::singleShot(delay, this, [this, from]() {
@@ -700,7 +700,7 @@ bool HttpFileBuffer::finalizeRename()
     if (!QFile::rename(part, dest)) {
         // Cross-filesystem fallback.
         if (!QFile::copy(part, dest)) {
-            qWarning("[podcast-cache] rename failed for episode %lld",
+            qWarning("[omaear-cache] rename failed for episode %lld",
                      static_cast<long long>(m_episodeId));
             // Keep .part usable; mark complete against part path by copying availability.
             QMutexLocker lock(&m_mutex);
@@ -724,7 +724,7 @@ bool HttpFileBuffer::finalizeRename()
     if (m_device)
         m_device->notifyMoreData();
 
-    qInfo("[podcast-cache] complete episode %lld → %s (%lld bytes)",
+    qInfo("[omaear-cache] complete episode %lld → %s (%lld bytes)",
           static_cast<long long>(m_episodeId), qPrintable(dest),
           static_cast<long long>(QFileInfo(dest).size()));
     emit completed(dest);
@@ -776,7 +776,7 @@ void HttpFileBuffer::pruneCache(qint64 keepEpisodeId, qint64 keepNextId)
         if (name.endsWith(QStringLiteral(".part"))) {
             if (id != keepEpisodeId && id != keepNextId
                 && (nowMs - fi.lastModified().toMSecsSinceEpoch()) > kPartMaxAgeMs) {
-                qInfo("[podcast-cache] prune stale .part %s", qPrintable(fi.absoluteFilePath()));
+                qInfo("[omaear-cache] prune stale .part %s", qPrintable(fi.absoluteFilePath()));
                 QFile::remove(fi.absoluteFilePath());
                 QFile::remove(dirPath + QStringLiteral("/.%1.ua").arg(id));
                 continue;
@@ -811,7 +811,7 @@ void HttpFileBuffer::pruneCache(qint64 keepEpisodeId, qint64 keepNextId)
     for (const QFileInfo &fi : finished) {
         if (total <= kMaxCacheBytes)
             break;
-        qInfo("[podcast-cache] prune finished %s (cap)", qPrintable(fi.absoluteFilePath()));
+        qInfo("[omaear-cache] prune finished %s (cap)", qPrintable(fi.absoluteFilePath()));
         total -= fi.size();
         QFile::remove(fi.absoluteFilePath());
     }

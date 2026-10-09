@@ -28,7 +28,7 @@ int runSelfTest(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("allanjorch"));
-    app.setApplicationName(QStringLiteral("podcast-selftest"));
+    app.setApplicationName(QStringLiteral("omaear-selftest"));
 
     check(parseDuration(QStringLiteral("90")) == 90, "duration seconds");
     check(parseDuration(QStringLiteral("1:02:03")) == 3723, "duration hms");

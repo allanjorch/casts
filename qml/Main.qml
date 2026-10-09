@@ -17,7 +17,7 @@ ApplicationWindow {
          : pageKind === "queue" ? "Queue"
          : pageKind === "explore" ? "Explore"
          : pageKind === "nowPlaying" ? backend.playerTitle
-         : "Podcasts"
+         : "OmaEar"
     color: theme.background
     font.family: "monospace"
     font.weight: Font.Normal

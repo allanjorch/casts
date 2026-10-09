@@ -52,6 +52,12 @@ struct ParsedShow {
 class Library {
 public:
     static QString defaultPath();
+    // One-time move of data/cache/config from the pre-rename "podcast" names to
+    // the current application name (atomic directory renames, never copies).
+    // Call after setApplicationName and before opening a Library. Returns false
+    // when it must not run because an old "podcast" process still has the data open.
+    static bool migrateLegacyLocations(QString *message = nullptr);
+    static constexpr const char *kLegacyAppName = "podcast";
 
     explicit Library(const QString &path = QString());
     ~Library();

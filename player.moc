@@ -397,7 +397,7 @@ template <> constexpr inline auto PlayerService::qt_create_metaobjectdata<qt_met
     QtMocHelpers::StringRefStorage qt_stringData {
         "PlayerService",
         "D-Bus Interface",
-        "com.github.allanjorch.podcast.Player",
+        "com.github.allanjorch.omaear.Player",
         "StateChanged",
         "",
         "QVariantMap",

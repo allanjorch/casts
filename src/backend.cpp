@@ -31,9 +31,9 @@
 #include <QUrl>
 
 namespace {
-const QString kPlayerService = QStringLiteral("com.github.allanjorch.podcast.Player");
-const QString kPlayerPath = QStringLiteral("/com/github/allanjorch/podcast");
-const QString kPlayerIface = QStringLiteral("com.github.allanjorch.podcast.Player");
+const QString kPlayerService = QStringLiteral("com.github.allanjorch.omaear.Player");
+const QString kPlayerPath = QStringLiteral("/com/github/allanjorch/omaear");
+const QString kPlayerIface = QStringLiteral("com.github.allanjorch.omaear.Player");
 
 const QList<double> kRates = {1.0, 1.2, 1.5, 1.8, 2.0, 0.5, 0.8};
 const QString kLastRefreshKey = QStringLiteral("refresh/lastSuccessMs");
@@ -505,7 +505,7 @@ void Backend::fetchNext()
 
     QNetworkRequest request{QUrl(job.url)};
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("podcast/0.1 (Omarchy; +https://github.com/allanjorch)"));
+                      QStringLiteral("omaear/0.1 (Omarchy; +https://github.com/allanjorch)"));
     request.setTransferTimeout(20000);
     if (job.plainEncoding)
         request.setRawHeader("Accept-Encoding", "identity");
@@ -576,7 +576,7 @@ void Backend::downloadCover(qint64 showId, const QString &imageUrl)
     m_showCoverDownloads.insert(showId);
     QNetworkRequest request{QUrl(imageUrl)};
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("podcast/0.1 (Omarchy)"));
+                      QStringLiteral("omaear/0.1 (Omarchy)"));
     request.setTransferTimeout(20000);
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, showId, imageUrl, gen, fresh]() {
@@ -747,7 +747,7 @@ void Backend::startEpisodeCoverDownload(qint64 episodeId, const QString &imageUr
     m_episodeCoverDownloads.insert(episodeId);
     QNetworkRequest request{QUrl(imageUrl)};
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("podcast/0.1 (Omarchy)"));
+                      QStringLiteral("omaear/0.1 (Omarchy)"));
     request.setTransferTimeout(20000);
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, episodeId, imageUrl, gen, freshFile]() {
@@ -1423,7 +1423,7 @@ void Backend::maybeAutoRefreshOnLaunch()
     if (lastMs > 0) {
         const qint64 age = QDateTime::currentMSecsSinceEpoch() - lastMs;
         if (age >= 0 && age < kAutoRefreshSkipMs) {
-            qInfo().noquote() << QStringLiteral("[podcast-refresh] launch refresh skipped: last success %1 s ago")
+            qInfo().noquote() << QStringLiteral("[omaear-refresh] launch refresh skipped: last success %1 s ago")
                                      .arg(age / 1000);
             return;
         }
@@ -1439,7 +1439,7 @@ void Backend::noteShelfFeedResult(const QString &url, bool ok, const QString &er
         ++m_shelfRefreshOk;
     } else {
         ++m_shelfRefreshFailed;
-        qWarning().noquote() << "[podcast-refresh] feed failed:" << url << "-" << error;
+        qWarning().noquote() << "[omaear-refresh] feed failed:" << url << "-" << error;
     }
 }
 
@@ -1458,7 +1458,7 @@ void Backend::finishShelfRefresh()
     // only a total failure (offline) leaves it alone so the next launch retries.
     if (ok > 0)
         noteSuccessfulShelfRefresh();
-    qInfo().noquote() << QStringLiteral("[podcast-refresh] shelf refresh done: %1 ok, %2 failed%3")
+    qInfo().noquote() << QStringLiteral("[omaear-refresh] shelf refresh done: %1 ok, %2 failed%3")
                              .arg(ok)
                              .arg(failed)
                              .arg(ok > 0 ? QStringLiteral(", stamped") : QStringLiteral(", not stamped"));
@@ -1658,7 +1658,7 @@ void Backend::fetchArtwork(const ArtSource &src, std::function<void(const QByteA
         return;
     }
     QNetworkRequest request{QUrl(src.url)};
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("podcast/0.1 (Omarchy)"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("omaear/0.1 (Omarchy)"));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     request.setTransferTimeout(30000);
     QNetworkReply *reply = m_network.get(request);

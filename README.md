@@ -1,10 +1,10 @@
-# Podcasts
+# OmaEar
 
 A shelf of shows. Close the window and the episode keeps playing.
 
 Paste a feed, or bring a whole library over with an OPML export from Podcast Addict. Covers sit in a gallery or a list. Anything still unheard stays in front, including an old backlog. The player stays up for the Omarchy bar after the window is gone.
 
-The command is `podcast`. The launcher name is Podcasts. This repo is [casts](https://github.com/allanjorch/casts).
+The command is `omaear`. The launcher name is OmaEar. This repo is [omaear](https://github.com/allanjorch/omaear). (Formerly “Podcasts”/`podcast`; data from that name moves over automatically on first start.)
 
 Designed together by [Allan Kristensen](https://github.com/allanjorch) and [Grok](https://x.ai).
 
@@ -26,7 +26,7 @@ Designed together by [Allan Kristensen](https://github.com/allanjorch) and [Grok
 
 **Navigation.** Escape, Alt+Left, Backspace (outside text fields), or the mouse Back button steps back through Now Playing, episode, and show. Alt+Right or mouse Forward restores after Back. Space pauses and resumes. Ctrl+Q closes the window and leaves the audio running.
 
-Open Podcasts again and the same window comes back. Stop playback with nothing left loaded, and the player exits.
+Open OmaEar again and the same window comes back. Stop playback with nothing left loaded, and the player exits.
 
 ## Mark played
 
@@ -55,10 +55,10 @@ Qt 6 with Quick, Quick Controls, Multimedia, SQL (SQLite), Network, and D-Bus. O
 ```
 qmake6
 make -j
-./podcast --self-test
-make install    # ~/.local/bin/podcast and a Podcasts launcher entry
+./omaear --self-test
+make install    # ~/.local/bin/omaear and an OmaEar launcher entry
 ```
 
-`make install` needs no root. The desktop entry runs `~/.local/bin/podcast`.
+`make install` needs no root. The desktop entry runs `~/.local/bin/omaear`.
 
-This version streams and remembers where you stopped. The library is `~/.local/share/allanjorch/podcast/library.db`.
+This version streams and remembers where you stopped. The library is `~/.local/share/allanjorch/omaear/library.db`.

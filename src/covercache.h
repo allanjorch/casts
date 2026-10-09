@@ -7,7 +7,7 @@
 #include <QString>
 
 #include <QElapsedTimer>
-// Startup timing (PODCAST_TIMING=1): started first thing in main().
+// Startup timing (OMAEAR_TIMING=1): started first thing in main().
 QElapsedTimer &startupTimer();
 bool startupTiming();
 

@@ -4,5 +4,6 @@ build/
 Makefile
 moc_*
 *.o
+omaear
 podcast
 .preview/

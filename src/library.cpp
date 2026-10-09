@@ -1,5 +1,6 @@
 #include "library.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -25,6 +26,55 @@ QString Library::defaultPath()
     return base + QStringLiteral("/library.db");
 }
 
+namespace {
+// Move <parent>/<legacy> to newPath when newPath is absent (or an empty dir).
+// rename(2) within one filesystem is atomic: the data is either all at the old
+// path or all at the new one.
+QString moveLegacyDir(const QString &newPath)
+{
+    QFileInfo target(newPath);
+    const QString parent = target.absolutePath();
+    const QString legacy = parent + QLatin1Char('/') + QLatin1String(Library::kLegacyAppName);
+    if (target.fileName() == QLatin1String(Library::kLegacyAppName) || !QFileInfo(legacy).isDir())
+        return {};
+    if (target.exists()) {
+        QDir dir(newPath);
+        if (!dir.isEmpty(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot))
+            return QStringLiteral("kept %1: %2 already has data").arg(legacy, newPath);
+        if (!QDir().rmdir(newPath))
+            return QStringLiteral("kept %1: cannot replace empty %2").arg(legacy, newPath);
+    }
+    QDir().mkpath(parent);
+    if (!QDir().rename(legacy, newPath))
+        return QStringLiteral("FAILED to move %1 -> %2").arg(legacy, newPath);
+    return QStringLiteral("moved %1 -> %2").arg(legacy, newPath);
+}
+}
+
+bool Library::migrateLegacyLocations(QString *message)
+{
+    QStringList log;
+    const QString data = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString cache = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    for (const QString &path : {data, cache}) {
+        const QString line = moveLegacyDir(path);
+        if (!line.isEmpty())
+            log << line;
+    }
+    // QSettings file: <config>/<org>/<app>.conf
+    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+        + QLatin1Char('/') + QCoreApplication::organizationName();
+    const QString oldConf = configDir + QLatin1Char('/') + QLatin1String(kLegacyAppName) + QStringLiteral(".conf");
+    const QString newConf = configDir + QLatin1Char('/') + QCoreApplication::applicationName() + QStringLiteral(".conf");
+    if (oldConf != newConf && QFileInfo::exists(oldConf) && !QFileInfo::exists(newConf)) {
+        log << (QFile::rename(oldConf, newConf) ? QStringLiteral("moved %1 -> %2")
+                                                : QStringLiteral("FAILED to move %1 -> %2")).arg(oldConf, newConf);
+    }
+    if (message)
+        *message = log.join(QLatin1Char('\n'));
+    return true;
+}
+
 Library::Library(const QString &path)
 {
     m_connection = QStringLiteral("library-%1").arg(++connectionSerial);
@@ -42,6 +92,24 @@ Library::Library(const QString &path)
         return;
     }
     m_open = true;
+    if (path.isEmpty()) {
+        // Cover paths are absolute; after the cache dir moved from the legacy
+        // name, point them at the new location (no-op once done).
+        const QString cache = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+        const QString legacy = QFileInfo(cache).absolutePath() + QLatin1Char('/') + QLatin1String(kLegacyAppName);
+        if (legacy != cache) {
+            for (const char *table : {"shows", "episodes"}) {
+                QSqlQuery q(db);
+                q.prepare(QStringLiteral("UPDATE %1 SET image_path = ? || substr(image_path, ?)"
+                                         " WHERE substr(image_path, 1, ?) = ?").arg(QLatin1String(table)));
+                q.addBindValue(cache + QLatin1Char('/'));
+                q.addBindValue(int(legacy.size()) + 2);
+                q.addBindValue(int(legacy.size()) + 1);
+                q.addBindValue(legacy + QLatin1Char('/'));
+                q.exec();
+            }
+        }
+    }
 }
 
 Library::~Library()

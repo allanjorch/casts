@@ -39,7 +39,7 @@ template <> constexpr inline auto UiBridge::qt_create_metaobjectdata<qt_meta_tag
     QtMocHelpers::StringRefStorage qt_stringData {
         "UiBridge",
         "D-Bus Interface",
-        "com.github.allanjorch.podcast.Ui",
+        "com.github.allanjorch.omaear.Ui",
         "Raise",
         ""
     };

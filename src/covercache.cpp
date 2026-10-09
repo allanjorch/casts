@@ -58,7 +58,7 @@ QElapsedTimer &startupTimer()
 
 bool startupTiming()
 {
-    static const bool on = qEnvironmentVariableIntValue("PODCAST_TIMING") == 1;
+    static const bool on = qEnvironmentVariableIntValue("OMAEAR_TIMING") == 1;
     return on;
 }
 

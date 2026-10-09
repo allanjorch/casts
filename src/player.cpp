@@ -31,9 +31,9 @@
 #include <chrono>
 
 namespace {
-const QString kUiService = QStringLiteral("com.github.allanjorch.podcast");
-const QString kPlayerService = QStringLiteral("com.github.allanjorch.podcast.Player");
-const QString kMprisService = QStringLiteral("org.mpris.MediaPlayer2.podcast");
+const QString kUiService = QStringLiteral("com.github.allanjorch.omaear");
+const QString kPlayerService = QStringLiteral("com.github.allanjorch.omaear.Player");
+const QString kMprisService = QStringLiteral("org.mpris.MediaPlayer2.omaear");
 constexpr int kMaxErrorRecoveries = 3;
 
 bool uiIsOpen()
@@ -97,8 +97,8 @@ public:
     bool canRaise() const { return true; }
     bool canSetFullscreen() const { return false; }
     bool hasTrackList() const { return false; }
-    QString identity() const { return QStringLiteral("Podcasts"); }
-    QString desktopEntry() const { return QStringLiteral("com.github.allanjorch.podcast"); }
+    QString identity() const { return QStringLiteral("OmaEar"); }
+    QString desktopEntry() const { return QStringLiteral("com.github.allanjorch.omaear"); }
     QStringList supportedUriSchemes() const { return {QStringLiteral("http"), QStringLiteral("https")}; }
     QStringList supportedMimeTypes() const
     {
@@ -178,7 +178,7 @@ private:
 
 class PlayerService : public QObject {
     Q_OBJECT
-    Q_CLASSINFO("D-Bus Interface", "com.github.allanjorch.podcast.Player")
+    Q_CLASSINFO("D-Bus Interface", "com.github.allanjorch.omaear.Player")
 
 public:
     explicit PlayerService(Library &library, QObject *parent = nullptr);
@@ -325,8 +325,8 @@ private:
 void MprisRootAdaptor::Raise()
 {
     if (uiIsOpen()) {
-        QDBusInterface ui(kUiService, QStringLiteral("/com/github/allanjorch/podcast/Ui"),
-                          QStringLiteral("com.github.allanjorch.podcast.Ui"),
+        QDBusInterface ui(kUiService, QStringLiteral("/com/github/allanjorch/omaear/Ui"),
+                          QStringLiteral("com.github.allanjorch.omaear.Ui"),
                           QDBusConnection::sessionBus());
         ui.call(QStringLiteral("Raise"));
         return;
@@ -496,7 +496,7 @@ PlayerService::PlayerService(Library &library, QObject *parent)
                    && position < 60000) {
             // Seek looked landed then bounced back near the start — try again.
             // Re-mute so the bounced opening is not audible while we re-seek.
-            qInfo("[podcast-player] resume bounced to %lld — reseek to %d",
+            qInfo("[omaear-player] resume bounced to %lld — reseek to %d",
                   static_cast<long long>(position), m_resumeGuardMs);
             m_resumeMs = m_resumeGuardMs;
             m_resumePending = true;
@@ -595,7 +595,7 @@ PlayerService::PlayerService(Library &library, QObject *parent)
         // the classic 2–3× opening loop (kMaxErrorRecoveries). Stay put and let the
         // resume watch finish seeking instead.
         if (settleProtected()) {
-            qInfo("[podcast-player] ignore error during settle gen=%d status=%d: %s",
+            qInfo("[omaear-player] ignore error during settle gen=%d status=%d: %s",
                   m_mediaGeneration, int(m_player->mediaStatus()), qPrintable(message));
             return;
         }
@@ -616,7 +616,7 @@ PlayerService::PlayerService(Library &library, QObject *parent)
                     return;
                 if (settleProtected())
                     return;
-                qInfo("[podcast-player] error recover attempt=%d gen=%d pos=%lld: scheduling rebuild",
+                qInfo("[omaear-player] error recover attempt=%d gen=%d pos=%lld: scheduling rebuild",
                       attempt, gen, static_cast<long long>(m_positionMs));
                 recoverAfterSleep(true);
             });
@@ -655,7 +655,7 @@ QVariantMap PlayerService::metadata() const
         return meta;
     meta.insert(QStringLiteral("mpris:trackid"),
                 QVariant::fromValue(QDBusObjectPath(
-                    QStringLiteral("/com/github/allanjorch/podcast/episode/%1").arg(m_episode.id))));
+                    QStringLiteral("/com/github/allanjorch/omaear/episode/%1").arg(m_episode.id))));
     if (m_durationMs > 0)
         meta.insert(QStringLiteral("mpris:length"), QVariant::fromValue<qlonglong>(m_durationMs * 1000));
     if (!m_art.isEmpty())
@@ -823,7 +823,7 @@ void PlayerService::Play()
         && !(m_buffer && !m_buffer->isComplete() && !m_buffer->isFailed())) {
         // If the playhead has advanced recently, this is not a corked stream.
         if (!(m_lastAdvanceAt.isValid() && m_lastAdvanceAt.elapsed() < 2000)) {
-            qInfo("[podcast-player] Play() stall recover pos=%lld anchor=%lld",
+            qInfo("[omaear-player] Play() stall recover pos=%lld anchor=%lld",
                   static_cast<long long>(m_positionMs),
                   static_cast<long long>(m_stallAnchorMs));
             recoverAfterSleep(true);
@@ -981,7 +981,7 @@ void PlayerService::ensureMonoSink()
 {
     if (m_monoSink && m_monoSink->state() != QProcess::NotRunning)
         return;
-    m_monoSinkName = "podcast-mono-" + QByteArray::number(QCoreApplication::applicationPid());
+    m_monoSinkName = "omaear-mono-" + QByteArray::number(QCoreApplication::applicationPid());
     const QString name = QString::fromLatin1(m_monoSinkName);
     // Exact (L+R)/2 on both channels. A MONO-position sink would let FFmpeg
     // downmix at -3 dB per channel instead (+3 dB on centred speech).
@@ -994,8 +994,8 @@ context.modules = [
   { name = libpipewire-module-adapter }
   { name = libpipewire-module-filter-chain
     args = {
-      node.description = "Podcasts (mono)"
-      media.name = "Podcasts (mono)"
+      node.description = "OmaEar (mono)"
+      media.name = "OmaEar (mono)"
       filter.graph = {
         nodes = [
           { type = builtin name = cl label = copy }
@@ -1090,7 +1090,7 @@ void PlayerService::recoverAfterSleep(bool resumePlay)
     }
     // Switching/resume/guard window: rebuilding now guarantees an audible opening replay.
     if (settleProtected()) {
-        qInfo("[podcast-player] skip recover during settle (pos=%lld resume=%d guard=%d grace=%d)",
+        qInfo("[omaear-player] skip recover during settle (pos=%lld resume=%d guard=%d grace=%d)",
               static_cast<long long>(m_positionMs), m_resumeMs, m_resumeGuardMs,
               int(withinBindGrace(kBindGraceMs)));
         return;
@@ -1098,7 +1098,7 @@ void PlayerService::recoverAfterSleep(bool resumePlay)
     // If the playhead is advancing, the pipeline is alive — do not rebind.
     if (m_lastAdvanceAt.isValid() && m_lastAdvanceAt.elapsed() < 2500
         && m_player->playbackState() == QMediaPlayer::PlayingState) {
-        qInfo("[podcast-player] skip recover; position advancing (pos=%lld ageMs=%lld)",
+        qInfo("[omaear-player] skip recover; position advancing (pos=%lld ageMs=%lld)",
               static_cast<long long>(m_positionMs),
               static_cast<long long>(m_lastAdvanceAt.elapsed()));
         return;
@@ -1107,7 +1107,7 @@ void PlayerService::recoverAfterSleep(bool resumePlay)
     const qint64 episodeId = m_episode.id;
     const int gen = m_mediaGeneration;
     const qint64 keepMs = bestKeepPositionMs();
-    qInfo("[podcast-player] recoverAfterSleep keepMs=%lld resumePlay=%d pos=%lld",
+    qInfo("[omaear-player] recoverAfterSleep keepMs=%lld resumePlay=%d pos=%lld",
           static_cast<long long>(keepMs), int(resumePlay),
           static_cast<long long>(m_positionMs));
     savePosition();
@@ -1226,7 +1226,7 @@ void PlayerService::checkStall()
     // Require a longer freeze than before so post-seek buffering does not trip us.
     if (m_stallSince.elapsed() >= 4000
         && qAbs(m_positionMs - m_stallAnchorMs) < 400) {
-        qInfo("[podcast-player] stall recover pos=%lld anchor=%lld frozenMs=%lld",
+        qInfo("[omaear-player] stall recover pos=%lld anchor=%lld frozenMs=%lld",
               static_cast<long long>(m_positionMs),
               static_cast<long long>(m_stallAnchorMs),
               static_cast<long long>(m_stallSince.elapsed()));
@@ -1384,7 +1384,7 @@ void PlayerService::kickOffPlayback(bool autoPlay)
         m_player->play();
     else
         m_player->pause();
-    qInfo("[podcast-player] kickoff episode %lld autoPlay=%d resumeMs=%d playerPos=%lld muted=%d",
+    qInfo("[omaear-player] kickoff episode %lld autoPlay=%d resumeMs=%d playerPos=%lld muted=%d",
           static_cast<long long>(m_episode.id), int(autoPlay), m_resumeMs,
           static_cast<long long>(m_player->position()), int(m_resumeMuted));
 }
@@ -1453,7 +1453,7 @@ void PlayerService::bindMediaSource()
         m_sourceBound = true;
         m_kickoffDone = false;
         m_sourceBoundAt.restart();
-        qInfo("[podcast-player] bind local episode %lld %s",
+        qInfo("[omaear-player] bind local episode %lld %s",
               static_cast<long long>(m_episode.id), qPrintable(finished));
         return;
     }
@@ -1462,7 +1462,7 @@ void PlayerService::bindMediaSource()
     if (!dev)
         return;
     if (!dev->isOpen() && !dev->open(QIODevice::ReadOnly)) {
-        qWarning("[podcast-cache] could not open growing device for episode %lld",
+        qWarning("[omaear-cache] could not open growing device for episode %lld",
                  static_cast<long long>(m_episode.id));
         return;
     }
@@ -1471,7 +1471,7 @@ void PlayerService::bindMediaSource()
     m_sourceBound = true;
     m_kickoffDone = false;
     m_sourceBoundAt.restart();
-    qInfo("[podcast-player] bind growing episode %lld avail=%lld complete=%d",
+    qInfo("[omaear-player] bind growing episode %lld avail=%lld complete=%d",
           static_cast<long long>(m_episode.id),
           static_cast<long long>(m_buffer->availableBytes()),
           int(m_buffer->isComplete()));
@@ -1638,7 +1638,7 @@ void PlayerService::maybePrefetchNext()
         }
     }
 
-    qInfo("[podcast-cache] prefetch next episode %lld", static_cast<long long>(nextId));
+    qInfo("[omaear-cache] prefetch next episode %lld", static_cast<long long>(nextId));
     m_prefetch = new HttpFileBuffer(nextId, QUrl(next.audioUrl), this);
     m_prefetch->setObjectName(QStringLiteral("prefetch-%1").arg(nextId));
     HttpFileBuffer::pruneCache(m_episode.id, nextId);
@@ -1684,10 +1684,11 @@ int runPlayer(int argc, char **argv)
 {
     QGuiApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("allanjorch"));
-    app.setApplicationName(QStringLiteral("podcast"));
-    app.setApplicationDisplayName(QStringLiteral("Podcasts"));
+    app.setApplicationName(QStringLiteral("omaear"));
+    app.setApplicationDisplayName(QStringLiteral("OmaEar"));
     app.setQuitOnLastWindowClosed(false);
 
+    Library::migrateLegacyLocations(); // normally already done by the UI process
     Library library;
     if (!library.isOpen())
         return 1;
@@ -1701,7 +1702,7 @@ int runPlayer(int argc, char **argv)
     auto bus = QDBusConnection::sessionBus();
     bus.registerObject(QStringLiteral("/org/mpris/MediaPlayer2"), object,
                        QDBusConnection::ExportAdaptors);
-    bus.registerObject(QStringLiteral("/com/github/allanjorch/podcast"), &service,
+    bus.registerObject(QStringLiteral("/com/github/allanjorch/omaear"), &service,
                        QDBusConnection::ExportScriptableSlots
                            | QDBusConnection::ExportScriptableSignals);
     if (!bus.registerService(kPlayerService))
@@ -1715,7 +1716,7 @@ int runPlayer(int argc, char **argv)
     if (library.audioCacheUa() != QStringLiteral("generic-v1")) {
         const int removed = HttpFileBuffer::purgeMediaCache();
         library.setAudioCacheUa(QStringLiteral("generic-v1"));
-        qInfo("[podcast-cache] audio identity changed: removed %d cached episode files", removed);
+        qInfo("[omaear-cache] audio identity changed: removed %d cached episode files", removed);
     }
     // One-time: Audioboom audio cached before the static-fallback fix has
     // stitched-in ads. A new player process plays nothing yet, so it is safe.
@@ -1723,7 +1724,7 @@ int runPlayer(int argc, char **argv)
         const QList<qint64> ids = library.episodeIdsViaHost(QStringLiteral("audioboom.com"));
         const int removed = HttpFileBuffer::purgeEpisodes(ids);
         library.markCacheMigrationDone(QStringLiteral("audio_cache_static_fallback"));
-        qInfo("[podcast-cache] static-fallback fix: removed %d cached Audioboom episode files", removed);
+        qInfo("[omaear-cache] static-fallback fix: removed %d cached Audioboom episode files", removed);
     }
     QTimer::singleShot(400, &service, &PlayerService::considerExit);
     return app.exec();

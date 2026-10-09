@@ -1,4 +1,5 @@
 #include "backend.h"
+#include "library.h"
 #include <cstdio>
 #include "covercache.h"
 #include "explore.h"
@@ -12,6 +13,7 @@
 #include <QEvent>
 #include <QFont>
 #include <QGuiApplication>
+#include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
@@ -99,7 +101,7 @@ private:
 
 class UiBridge : public QObject {
     Q_OBJECT
-    Q_CLASSINFO("D-Bus Interface", "com.github.allanjorch.podcast.Ui")
+    Q_CLASSINFO("D-Bus Interface", "com.github.allanjorch.omaear.Ui")
 public:
     explicit UiBridge(Backend *backend, QObject *parent = nullptr)
         : QObject(parent)
@@ -129,9 +131,9 @@ int main(int argc, char **argv)
 
     QGuiApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("allanjorch"));
-    app.setApplicationName(QStringLiteral("podcast"));
-    app.setApplicationDisplayName(QStringLiteral("Podcasts"));
-    app.setDesktopFileName(QStringLiteral("com.github.allanjorch.podcast"));
+    app.setApplicationName(QStringLiteral("omaear"));
+    app.setApplicationDisplayName(QStringLiteral("OmaEar"));
+    app.setDesktopFileName(QStringLiteral("com.github.allanjorch.omaear"));
     QFont uiFont(QStringLiteral("monospace"));
     uiFont.setStyleHint(QFont::Monospace);
     uiFont.setWeight(QFont::Normal);
@@ -139,12 +141,27 @@ int main(int argc, char **argv)
     QQuickStyle::setStyle(QStringLiteral("Material"));
 
     auto bus = QDBusConnection::sessionBus();
-    const QString uiService = QStringLiteral("com.github.allanjorch.podcast");
+    const QString uiService = QStringLiteral("com.github.allanjorch.omaear");
     if (bus.interface()->isServiceRegistered(uiService)) {
-        QDBusInterface ui(uiService, QStringLiteral("/com/github/allanjorch/podcast/Ui"),
-                          QStringLiteral("com.github.allanjorch.podcast.Ui"), bus);
+        QDBusInterface ui(uiService, QStringLiteral("/com/github/allanjorch/omaear/Ui"),
+                          QStringLiteral("com.github.allanjorch.omaear.Ui"), bus);
         ui.call(QStringLiteral("Raise"));
         return 0;
+    }
+    // Pre-rename build still running: it has the library open at the old path.
+    if (bus.interface()->isServiceRegistered(QStringLiteral("com.github.allanjorch.podcast"))
+        || bus.interface()->isServiceRegistered(QStringLiteral("com.github.allanjorch.podcast.Player"))) {
+        const char *msg = "OmaEar: the old Podcasts app is still running. Quit it first (pkill -f podcast), then start OmaEar.";
+        fprintf(stderr, "%s\n", msg);
+        QProcess::startDetached(QStringLiteral("notify-send"), {QStringLiteral("OmaEar"),
+            QStringLiteral("Quit the old Podcasts app first (pkill -f podcast), then start OmaEar.")});
+        return 1;
+    }
+    {
+        QString moved;
+        Library::migrateLegacyLocations(&moved);
+        if (!moved.isEmpty())
+            qInfo("[omaear] rename migration:\n%s", qPrintable(moved));
     }
 
     Library library;
@@ -163,7 +180,7 @@ int main(int argc, char **argv)
     Backend backend(library);
     Explore explore(library, backend);
     UiBridge bridge(&backend);
-    bus.registerObject(QStringLiteral("/com/github/allanjorch/podcast/Ui"), &bridge,
+    bus.registerObject(QStringLiteral("/com/github/allanjorch/omaear/Ui"), &bridge,
                        QDBusConnection::ExportAllSlots);
     bus.registerService(uiService);
 
@@ -190,7 +207,7 @@ int main(int argc, char **argv)
             });
         }
         // Harness: grow the window (bigger tiles) to check resizes never reload covers.
-        if (qEnvironmentVariableIntValue("PODCAST_TIMING_RESIZE") == 1) {
+        if (qEnvironmentVariableIntValue("OMAEAR_TIMING_RESIZE") == 1) {
             if (auto *win = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst())) {
                 QTimer::singleShot(1500, win, [win]() {
                     fprintf(stderr, "timing: resize %lld ms\n", qint64(startupTimer().elapsed()));
@@ -199,7 +216,7 @@ int main(int argc, char **argv)
                 });
             }
         }
-        const int quitMs = qEnvironmentVariableIntValue("PODCAST_TIMING_QUIT_MS");
+        const int quitMs = qEnvironmentVariableIntValue("OMAEAR_TIMING_QUIT_MS");
         if (quitMs > 0)
             QTimer::singleShot(quitMs, &app, &QCoreApplication::quit);
     }

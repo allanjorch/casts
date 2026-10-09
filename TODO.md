@@ -1,4 +1,4 @@
-# Podcast app backlog
+# OmaEar backlog
 
 Work **one item at a time**. Do not start the next until the current one is done and checked off. Discuss item 7 before any implementation.
 

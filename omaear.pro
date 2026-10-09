@@ -2,7 +2,7 @@ QT += quick quickcontrols2 sql network dbus multimedia
 CONFIG += c++17
 CONFIG -= app_bundle
 
-TARGET = podcast
+TARGET = omaear
 TEMPLATE = app
 
 SOURCES += \
@@ -35,6 +35,6 @@ RESOURCES += resources.qrc
 # Installed by `make install` into the user prefix, no root required.
 PREFIX = $$getenv(HOME)/.local
 target.path = $$PREFIX/bin
-desktop.files = com.github.allanjorch.podcast.desktop
+desktop.files = com.github.allanjorch.omaear.desktop
 desktop.path = $$PREFIX/share/applications
 INSTALLS += target desktop
