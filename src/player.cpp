@@ -4,6 +4,12 @@
 #include "growingmediadevice.h"
 
 #include <QAudioOutput>
+#include <QFile>
+#include <QDir>
+#include <csignal>
+#include <sys/prctl.h>
+#include <QAudioDevice>
+#include <QMediaDevices>
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QDBusAbstractAdaptor>
@@ -176,6 +182,7 @@ class PlayerService : public QObject {
 
 public:
     explicit PlayerService(Library &library, QObject *parent = nullptr);
+    ~PlayerService() override;
 
     QString playbackStatus() const;
     double rate() const { return m_rate; }
@@ -198,6 +205,7 @@ public slots:
     Q_SCRIPTABLE void SeekTo(double seconds);
     Q_SCRIPTABLE void SetRate(double value);
     Q_SCRIPTABLE void SetVolume(double value);
+    Q_SCRIPTABLE void SetMono(bool on);
     Q_SCRIPTABLE void RefreshArt();
     Q_SCRIPTABLE QVariantMap State();
 
@@ -213,6 +221,12 @@ private:
     void armResumeWatch();
     void clearResumeWatch();
     void rebuildAudioOutput();
+    // Mono: a private PipeWire filter-chain sink (child `pipewire -c`) that
+    // mixes (L+R)/2 into both channels and plays on the default output.
+    // Switching moves the live QAudioOutput to/from that sink.
+    void ensureMonoSink();
+    QAudioDevice monoDevice() const;
+    void applyMono();
     void recoverAfterSleep(bool resumePlay);
     void armStallWatch();
     void checkStall();
@@ -242,6 +256,7 @@ private:
     Library &m_library;
     QMediaPlayer *m_player = nullptr;
     QAudioOutput *m_audio = nullptr;
+    QMediaDevices m_devices;
     MprisPlayerAdaptor *m_mpris = nullptr;
     HttpFileBuffer *m_buffer = nullptr;
     HttpFileBuffer *m_prefetch = nullptr;
@@ -295,6 +310,9 @@ private:
     bool m_marked = false;
     double m_rate = 1;
     double m_volume = 1;
+    bool m_mono = false;
+    QProcess *m_monoSink = nullptr;
+    QByteArray m_monoSinkName;
     qint64 m_lastSavedMs = 0;
     bool m_playAfterSleep = false;
     bool m_recovering = false;
@@ -378,6 +396,13 @@ PlayerService::PlayerService(Library &library, QObject *parent)
     m_rate = m_library.rate();
     m_volume = m_library.volume();
     m_audio->setVolume(static_cast<float>(m_volume));
+    m_mono = m_library.mono();
+    if (m_mono)
+        applyMono();
+    connect(&m_devices, &QMediaDevices::audioOutputsChanged, this, [this]() {
+        if (m_mono)
+            applyMono(); // first enable: switch once the new sink shows up
+    });
     {
         // Long podcast HTTP streams (e.g. Megaphone) need a generous read timeout;
         // default is short enough that a brief stall becomes "Demuxing failed".
@@ -920,6 +945,107 @@ void PlayerService::SetVolume(double value)
     publish();
 }
 
+PlayerService::~PlayerService()
+{
+    if (m_monoSink) {
+        m_monoSink->disconnect(this);
+        m_monoSink->terminate();
+        m_monoSink->waitForFinished(500);
+    }
+}
+
+void PlayerService::SetMono(bool on)
+{
+    if (on == m_mono)
+        return;
+    m_mono = on;
+    m_library.setMono(on);
+    applyMono();
+}
+
+void PlayerService::applyMono()
+{
+    if (m_mono)
+        ensureMonoSink(); // first use: the device appears in ~100 ms, then audioOutputsChanged swaps
+    // Swap only when the target differs; the sink stays up for the session so
+    // later toggles are a plain output swap.
+    const QAudioDevice mono = m_mono ? monoDevice() : QAudioDevice();
+    const bool onMono = m_audio && m_audio->device().id() == m_monoSinkName && !m_monoSinkName.isEmpty();
+    // setDevice on the live output: ~50 ms switch, no rebuffer or restart.
+    // (Replacing the QAudioOutput mid-play went silent on the way back.)
+    if (m_audio && (m_mono ? (!mono.isNull() && !onMono) : onMono))
+        m_audio->setDevice(m_mono ? mono : QMediaDevices::defaultAudioOutput());
+}
+
+void PlayerService::ensureMonoSink()
+{
+    if (m_monoSink && m_monoSink->state() != QProcess::NotRunning)
+        return;
+    m_monoSinkName = "podcast-mono-" + QByteArray::number(QCoreApplication::applicationPid());
+    const QString name = QString::fromLatin1(m_monoSinkName);
+    // Exact (L+R)/2 on both channels. A MONO-position sink would let FFmpeg
+    // downmix at -3 dB per channel instead (+3 dB on centred speech).
+    const QString conf = QStringLiteral(R"CONF(context.properties = { log.level = 0 }
+context.spa-libs = { audio.convert.* = audioconvert/libspa-audioconvert  support.* = support/libspa-support }
+context.modules = [
+  { name = libpipewire-module-rt flags = [ ifexists nofail ] }
+  { name = libpipewire-module-protocol-native }
+  { name = libpipewire-module-client-node }
+  { name = libpipewire-module-adapter }
+  { name = libpipewire-module-filter-chain
+    args = {
+      node.description = "Podcasts (mono)"
+      media.name = "Podcasts (mono)"
+      filter.graph = {
+        nodes = [
+          { type = builtin name = cl label = copy }
+          { type = builtin name = cr label = copy }
+          { type = builtin name = ma label = mixer control = { "Gain 1" = 0.5 "Gain 2" = 0.5 } }
+          { type = builtin name = mb label = mixer control = { "Gain 1" = 0.5 "Gain 2" = 0.5 } }
+        ]
+        links = [
+          { output = "cl:Out" input = "ma:In 1" }
+          { output = "cr:Out" input = "ma:In 2" }
+          { output = "cl:Out" input = "mb:In 1" }
+          { output = "cr:Out" input = "mb:In 2" }
+        ]
+        inputs = [ "cl:In" "cr:In" ]
+        outputs = [ "ma:Out" "mb:Out" ]
+      }
+      capture.props = { node.name = "%1" media.class = Audio/Sink audio.position = [ FL FR ] priority.session = 0 priority.driver = 0 }
+      playback.props = { node.name = "%1.out" audio.position = [ FL FR ] media.role = Music }
+    }
+  }
+]
+)CONF").arg(name);
+    const QString path = QDir::tempPath() + QStringLiteral("/%1.conf").arg(name);
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return;
+    f.write(conf.toUtf8());
+    f.close();
+    m_monoSink = new QProcess(this);
+    m_monoSink->setProcessChannelMode(QProcess::ForwardedErrorChannel);
+    // Never outlive the player (crash included).
+    m_monoSink->setChildProcessModifier([]() { ::prctl(PR_SET_PDEATHSIG, SIGTERM); });
+    m_monoSink->start(QStringLiteral("pipewire"), {QStringLiteral("-c"), path});
+    connect(m_monoSink, &QProcess::finished, this, [this]() {
+        // Sink died (PipeWire restart): fall back to the normal output.
+        if (m_audio && m_audio->device().id() == m_monoSinkName)
+            m_audio->setDevice(QMediaDevices::defaultAudioOutput());
+    });
+}
+
+QAudioDevice PlayerService::monoDevice() const
+{
+    if (m_monoSinkName.isEmpty())
+        return {};
+    for (const QAudioDevice &d : QMediaDevices::audioOutputs())
+        if (d.id() == m_monoSinkName)
+            return d;
+    return {};
+}
+
 void PlayerService::RefreshArt()
 {
     if (m_episode.id == 0)
@@ -939,7 +1065,8 @@ void PlayerService::RefreshArt()
 
 void PlayerService::rebuildAudioOutput()
 {
-    auto *next = new QAudioOutput(this);
+    const QAudioDevice mono = m_mono ? monoDevice() : QAudioDevice();
+    auto *next = mono.isNull() ? new QAudioOutput(this) : new QAudioOutput(mono, this);
     next->setVolume(m_resumeMuted ? 0.f : static_cast<float>(m_volume));
     m_player->setAudioOutput(next);
     if (m_audio)

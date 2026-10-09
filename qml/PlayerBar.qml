@@ -183,6 +183,14 @@ Rectangle {
                         // Click toggles mute; hover still opens the slider.
                         onClicked: backend.toggleMute()
                     }
+                    // Mono downmix: bright when on, dimmed when off (shared with Now Playing).
+                    IconButton {
+                        id: monoButton
+                        icon.source: "qrc:/icons/mono-symbolic.svg"
+                        glyph: backend.playerMono ? theme.foreground : theme.muted
+                        tip: backend.playerMono ? "Mono: mix left and right channels (on)" : "Mono: mix left and right channels (off)"
+                        onClicked: backend.toggleMono()
+                    }
                     IconButton {
                         id: speedButton
                         caption: rateLabel(backend.playerRate)

@@ -590,6 +590,16 @@ void Library::setVolume(double volume)
     setSetting(QStringLiteral("volume"), QString::number(clamped, 'f', 3));
 }
 
+bool Library::mono() const
+{
+    return setting(QStringLiteral("playback.mono"), QStringLiteral("0")) == QStringLiteral("1");
+}
+
+void Library::setMono(bool on)
+{
+    setSetting(QStringLiteral("playback.mono"), on ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
 double Library::volumeBeforeMute() const
 {
     bool ok = false;

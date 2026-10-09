@@ -92,6 +92,9 @@ public:
     double volume() const;
     void setVolume(double volume);
     // Level to restore when unmuting (0 = none saved).
+    // Playback downmix to mono (settings key playback.mono).
+    bool mono() const;
+    void setMono(bool on);
     double volumeBeforeMute() const;
     void setVolumeBeforeMute(double volume);
     qint64 lastPlayedEpisodeId() const;

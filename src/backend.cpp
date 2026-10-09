@@ -94,6 +94,7 @@ Backend::Backend(Library &library, QObject *parent)
 {
     m_playerRate = m_library.rate();
     m_playerVolume = m_library.volume();
+    m_playerMono = m_library.mono();
     reloadShows();
     reloadQueue();
     auto *timer = new QTimer(this);
@@ -1037,6 +1038,15 @@ void Backend::toggleMute()
     }
     const double restore = m_library.volumeBeforeMute();
     setVolume(restore > 0.0005 ? restore : 1.0);
+}
+
+void Backend::toggleMono()
+{
+    m_playerMono = !m_playerMono;
+    m_library.setMono(m_playerMono);
+    emit monoChanged(); // UI flips now; the player swaps its output right after
+    if (QDBusConnection::sessionBus().interface()->isServiceRegistered(kPlayerService))
+        callPlayer(QStringLiteral("SetMono"), {m_playerMono});
 }
 
 void Backend::setRate(double rate)

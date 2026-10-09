@@ -255,6 +255,11 @@ Item {
                 id: transport
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: page.compact ? 6 : 10
+                // Balances the mono toggle so play/pause stays centred.
+                Item {
+                    width: monoToggle.width
+                    height: monoToggle.height
+                }
                 IconButton {
                     icon.name: "media-seek-backward-symbolic"
                     tip: "Back 15 seconds"
@@ -271,6 +276,14 @@ Item {
                     icon.name: "media-seek-forward-symbolic"
                     tip: "Forward 30 seconds"
                     onClicked: page.nudge(30)
+                }
+                // Mono downmix: bright when on, dimmed when off (shared with the player bar).
+                IconButton {
+                    id: monoToggle
+                    icon.source: "qrc:/icons/mono-symbolic.svg"
+                    glyph: backend.playerMono ? theme.foreground : theme.muted
+                    tip: backend.playerMono ? "Mono: mix left and right channels (on)" : "Mono: mix left and right channels (off)"
+                    onClicked: backend.toggleMono()
                 }
             }
 

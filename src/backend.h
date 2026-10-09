@@ -51,6 +51,7 @@ class Backend : public QObject {
     Q_PROPERTY(bool playerPlayed READ playerPlayed NOTIFY playerStateChanged)
     Q_PROPERTY(double playerRate READ playerRate NOTIFY playerStateChanged)
     Q_PROPERTY(double playerVolume READ playerVolume NOTIFY playerStateChanged)
+    Q_PROPERTY(bool playerMono READ playerMono NOTIFY monoChanged)
     Q_PROPERTY(QString playerDescription READ playerDescription NOTIFY playerStateChanged)
     Q_PROPERTY(double playerPosition READ playerPosition NOTIFY playerPositionChanged)
     Q_PROPERTY(double playerDuration READ playerDuration NOTIFY playerStateChanged)
@@ -98,6 +99,7 @@ public:
     bool playerPlayed() const { return m_playerPlayed; }
     double playerRate() const { return m_playerRate; }
     double playerVolume() const { return m_playerVolume; }
+    bool playerMono() const { return m_playerMono; }
     QString playerDescription() const { return m_playerDescription; }
     double playerPosition() const { return m_playerPosition; }
     double playerDuration() const { return m_playerDuration; }
@@ -143,6 +145,8 @@ public:
     Q_INVOKABLE void setVolume(double volume);
     // Volume icon click: mute, or restore the level from before muting (persisted).
     Q_INVOKABLE void toggleMute();
+    // Downmix playback to mono; persisted (playback.mono), applied live.
+    Q_INVOKABLE void toggleMono();
     Q_INVOKABLE void setShelfView(const QString &view);
     Q_INVOKABLE void setShelfColumns(int columns);
     Q_INVOKABLE void setShelfListSize(int size);
@@ -185,6 +189,7 @@ public:
     void raiseWindow();
 
 signals:
+    void monoChanged();
     void statusChanged();
     void busyChanged();
     void lastRefreshChanged();
@@ -303,6 +308,7 @@ private:
     bool m_playerPlayed = false;
     double m_playerRate = 1;
     double m_playerVolume = 1;
+    bool m_playerMono = false;
     QString m_playerDescription;
     double m_playerPosition = 0;
     double m_playerDuration = 0;

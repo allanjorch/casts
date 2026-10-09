@@ -20,6 +20,7 @@
         <file alias="FastWheel.qml">qml/FastWheel.qml</file>
         <file alias="QuietScroll.qml">qml/QuietScroll.qml</file>
         <file alias="icons/queue-symbolic.svg">qml/icons/queue-symbolic.svg</file>
+        <file alias="icons/mono-symbolic.svg">qml/icons/mono-symbolic.svg</file>
         <file alias="icons/queue-add-symbolic.svg">qml/icons/queue-add-symbolic.svg</file>
         <file alias="icons/queue-remove-symbolic.svg">qml/icons/queue-remove-symbolic.svg</file>
         <file alias="icons/queue-clear-symbolic.svg">qml/icons/queue-clear-symbolic.svg</file>
