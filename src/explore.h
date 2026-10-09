@@ -73,6 +73,8 @@ class Explore : public QObject {
     Q_OBJECT
     Q_PROPERTY(ExploreModel *results READ results CONSTANT)
     Q_PROPERTY(QString query READ query NOTIFY queryChanged)
+    // True while the list shows a publisher (iTunes artistTerm) search.
+    Q_PROPERTY(bool publisherSearch READ publisherSearch NOTIFY queryChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     Q_PROPERTY(QString heading READ heading NOTIFY headingChanged)
@@ -92,6 +94,7 @@ public:
 
     ExploreModel *results() { return &m_model; }
     QString query() const { return m_query; }
+    bool publisherSearch() const { return m_publisher; }
     bool loading() const { return m_loading; }
     QString error() const { return m_error; }
     QString heading() const { return m_heading; }
@@ -114,6 +117,8 @@ public:
     Q_INVOKABLE void setQuery(const QString &text);
     // Enter in the field: skip the debounce.
     Q_INVOKABLE void searchNow();
+    // Publisher link: closes the preview and lists that publisher's podcasts.
+    Q_INVOKABLE void searchPublisher(const QString &name);
     Q_INVOKABLE void retry();
     Q_INVOKABLE void subscribe(int row);
     Q_INVOKABLE void openPreview(int row);
@@ -168,6 +173,7 @@ private:
     void applyCountry();
     QString topKey() const { return QStringLiteral("top:") + m_country; }
     QString m_query;
+    bool m_publisher = false;
     QString m_shownKey;
     bool m_loading = false;
     QString m_error;

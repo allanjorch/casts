@@ -273,7 +273,8 @@ QNetworkReply *Explore::get(const QString &url)
 
 QString Explore::searchKey(const QString &term) const
 {
-    return QStringLiteral("search:%1:%2").arg(m_country, term.simplified().toLower());
+    return QStringLiteral("%1:%2:%3").arg(m_publisher ? QStringLiteral("artist") : QStringLiteral("search"),
+                                          m_country, term.simplified().toLower());
 }
 
 void Explore::activate()
@@ -284,9 +285,10 @@ void Explore::activate()
 
 void Explore::setQuery(const QString &text)
 {
-    if (text == m_query)
+    if (text == m_query && !m_publisher)
         return;
     m_query = text;
+    m_publisher = false; // typing or clearing returns to the normal search
     emit queryChanged();
     const QString term = text.simplified();
     const QString key = term.isEmpty() ? topKey() : searchKey(term);
@@ -307,6 +309,19 @@ void Explore::setQuery(const QString &text)
 void Explore::searchNow()
 {
     m_debounce->stop();
+    startRequest();
+}
+
+void Explore::searchPublisher(const QString &name)
+{
+    const QString term = name.simplified();
+    if (term.isEmpty())
+        return;
+    closePreview();
+    m_debounce->stop();
+    m_query = term;
+    m_publisher = true;
+    emit queryChanged();
     startRequest();
 }
 
@@ -376,7 +391,8 @@ void Explore::requestTop()
 void Explore::requestSearch(const QString &term)
 {
     const QString key = searchKey(term);
-    const QString heading = QStringLiteral("Results for “%1”").arg(term);
+    const QString heading = m_publisher ? QStringLiteral("Podcasts from “%1”").arg(term)
+                                        : QStringLiteral("Results for “%1”").arg(term);
     if (m_cache.contains(key)) {
         m_shownKey = key;
         show(m_cache.value(key), heading);
@@ -393,6 +409,8 @@ void Explore::requestSearch(const QString &term)
     q.addQueryItem(QStringLiteral("limit"), QStringLiteral("50"));
     q.addQueryItem(QStringLiteral("country"), m_country);
     q.addQueryItem(QStringLiteral("term"), term);
+    if (m_publisher)
+        q.addQueryItem(QStringLiteral("attribute"), QStringLiteral("artistTerm"));
     QUrl url(QStringLiteral("https://itunes.apple.com/search"));
     url.setQuery(q);
     QNetworkReply *reply = get(url.toString(QUrl::FullyEncoded));
@@ -406,7 +424,15 @@ void Explore::requestSearch(const QString &term)
             setError(errorText(reply));
             return;
         }
-        const QList<ExploreResult> rows = parseSearch(reply->readAll());
+        QList<ExploreResult> rows = parseSearch(reply->readAll());
+        if (key.startsWith(QStringLiteral("artist:"))) {
+            // Publisher search: newest latest-episode first, undated last.
+            std::stable_sort(rows.begin(), rows.end(), [](const ExploreResult &a, const ExploreResult &b) {
+                if ((a.released > 0) != (b.released > 0))
+                    return a.released > 0;
+                return a.released > b.released;
+            });
+        }
         m_cache.insert(key, rows);
         m_shownKey = key;
         show(rows, heading);

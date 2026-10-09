@@ -30,4 +30,4 @@ Work **one item at a time**. Do not start the next until the current one is done
 20. [x] **Page navigation** — Browser-style back/forward history; mouse side buttons, Alt+Left/Right.
 21. [x] **Now Playing art** — Ctrl+wheel resizes the cover (20–100%, saved, Ctrl+0 resets) without flicker; right-click Copy / Save artwork… / Copy image URL on Now Playing art and shelf covers.
 22. [ ] **Search: episodes within library** — Search episode titles/notes across subscribed shows.
-23. [ ] **Explore: publisher link** — On an Explore podcast preview, make the publisher subtitle (e.g. "DR", "RADIO IIII") clickable to run a new search showing that publisher's podcasts.
+23. [x] **Explore: publisher link** — On an Explore podcast preview, make the publisher subtitle (e.g. "DR", "RADIO IIII") clickable to run a new search showing that publisher's podcasts.

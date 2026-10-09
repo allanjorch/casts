@@ -499,12 +499,25 @@ Item {
                                 font.pixelSize: theme.heading
                                 wrapMode: TextEdit.Wrap
                             }
-                            SelectableText {
-                                width: parent.width
+                            // Publisher link: lists this publisher's podcasts.
+                            Text {
+                                id: publisherLink
+                                width: Math.min(implicitWidth, parent.width)
                                 text: explore.preview.author || ""
-                                color: theme.dim
+                                color: theme.blue
                                 font.pixelSize: theme.body
-                                wrapMode: TextEdit.Wrap
+                                font.weight: Font.Normal
+                                font.underline: true
+                                wrapMode: Text.Wrap
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: publisherLink.text.length > 0
+                                    onClicked: {
+                                        searchField.text = publisherLink.text
+                                        explore.searchPublisher(publisherLink.text)
+                                    }
+                                }
                             }
                             Text {
                                 width: parent.width
