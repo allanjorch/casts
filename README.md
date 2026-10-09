@@ -62,3 +62,21 @@ make install    # ~/.local/bin/omaear and an OmaEar launcher entry
 `make install` needs no root. The desktop entry runs `~/.local/bin/omaear`.
 
 This version streams and remembers where you stopped. The library is `~/.local/share/allanjorch/omaear/library.db`.
+
+## Package (Arch / Omarchy)
+
+`packaging/PKGBUILD` builds `omaear` into `/usr` (binary, desktop entry, license). For a release it uses the GitHub tag tarball `v$pkgver`. To build from this checkout instead:
+
+```
+packaging/build-local.sh     # makepkg on HEAD, then refreshes dist/repo (pacman repo)
+```
+
+Install from a hosted repo by adding this to `/etc/pacman.conf` (URL to be finalised; GitHub Releases or Pages):
+
+```
+[omaear]
+SigLevel = Optional TrustAll
+Server = https://github.com/allanjorch/omaear/releases/download/repo
+```
+
+then `sudo pacman -Sy omaear`. To try the local repo: `Server = file:///home/allan/Work/omaear/dist/repo`.

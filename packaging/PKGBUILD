@@ -1,0 +1,42 @@
+# Maintainer: Allan Kristensen <allanjorch@proton.me>
+pkgname=omaear
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A shelf of podcasts for Omarchy, with playback that keeps going"
+arch=('x86_64')
+url="https://github.com/allanjorch/omaear"
+license=('MIT')
+depends=(
+  'qt6-base'               # Core, Gui, Network, DBus, Sql (+ SQLite driver)
+  'qt6-declarative'        # Qml, Quick, Controls (Material), Layouts, Dialogs
+  'qt6-multimedia'         # QMediaPlayer, QAudioOutput
+  'qt6-multimedia-ffmpeg'  # decoding backend
+  'qt6-svg'                # SVG icons (qrc:/icons/*.svg)
+  'pipewire'               # mono downmix sink (`pipewire -c`, filter-chain)
+  'glibc'
+  'gcc-libs'
+)
+makedepends=() # qmake6, moc, rcc ship with qt6-base
+options=('!debug')
+optdepends=('libnotify: notice when an old pre-rename instance must be quit first')
+# Release: the GitHub tag tarball. packaging/build-local.sh drops a tarball of
+# the local checkout under the same name, so makepkg uses it instead.
+source=("$pkgname-$pkgver.tar.gz::https://github.com/allanjorch/omaear/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP') # replace with the real sum when v0.1.0 is tagged
+
+build() {
+  cd "$pkgname-$pkgver"
+  qmake6 PREFIX=/usr CONFIG+=release
+  make
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  QT_QPA_PLATFORM=offscreen ./omaear --self-test
+  test "$(./omaear --version)" = "omaear $pkgver"
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make INSTALL_ROOT="$pkgdir" install
+}
